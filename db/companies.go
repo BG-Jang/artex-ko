@@ -11,7 +11,7 @@ import (
 )
 
 // =====================================================================
-// 公司主体层
+// 기업 주체 계층
 // =====================================================================
 
 // Company is a row in the companies table.
@@ -52,8 +52,8 @@ var (
 )
 
 const (
-	// 企业范围不限制规则条数:逐个 IP / 域名录入的范围动辄上千条,封顶只会逼用户
-	// 拆成多个企业。请求体大小(server 侧 maxCompanyMutationBodyBytes)仍然兜底。
+	// 기업 범위는 규칙 개수를 제한하지 않는다: IP / 도메인을 하나씩 입력한 범위는 툭하면 수천 건이 되고, 상한을 두면 사용자가
+	// 기업을 여러 개로 쪼개게 만들 뿐이다. 요청 본문 크기(server 쪽 maxCompanyMutationBodyBytes)는 여전히 최종 방어선이다.
 	//
 	// Raw and normalized textual scope payloads are bounded by Unicode rune
 	// count so multi-byte input is treated consistently by the API and DB layer.
@@ -69,12 +69,12 @@ func (e *CompanyScopeValidationError) Error() string { return e.Message }
 
 // ValidateCompanyScopeInputBounds applies request-wide limits before parsing.
 // Store methods call it again so non-HTTP callers cannot bypass the limits.
-// 只约束单条规则的长度,不限制条数。
+// 규칙 하나의 길이만 제한하고, 개수는 제한하지 않는다.
 func ValidateCompanyScopeInputBounds(inputs []ScopeInput) error {
 	for i, input := range inputs {
 		if utf8.RuneCountInString(input.Value) > MaxCompanyScopeRawRunes {
 			return &CompanyScopeValidationError{Message: fmt.Sprintf(
-				"企业范围第 %d 条原始值过长: 最多 %d 个字符", i+1, MaxCompanyScopeRawRunes,
+				"기업 범위 %d번째 원본 값이 너무 깁니다: 최대 %d자", i+1, MaxCompanyScopeRawRunes,
 			)}
 		}
 	}
@@ -372,7 +372,7 @@ func (s *CompanyStore) AddScopeInputsChecked(companyID int64, inputs []ScopeInpu
 	if needsAttribution {
 		warning, err := recomputeAttributionTx(tx)
 		if err != nil {
-			return 0, 0, invalid, errors, fmt.Errorf("重新计算企业归属失败: %w", err)
+			return 0, 0, invalid, errors, fmt.Errorf("기업 귀속 재계산 실패: %w", err)
 		}
 		logAttributionWarning(warning)
 	}
@@ -400,12 +400,12 @@ func validateParsedScopeBounds(rules []ParsedScope) error {
 	for i, rule := range rules {
 		if utf8.RuneCountInString(rule.Raw) > MaxCompanyScopeRawRunes {
 			return &CompanyScopeValidationError{Message: fmt.Sprintf(
-				"企业范围第 %d 条原始值过长: 最多 %d 个字符", i+1, MaxCompanyScopeRawRunes,
+				"기업 범위 %d번째 원본 값이 너무 깁니다: 최대 %d자", i+1, MaxCompanyScopeRawRunes,
 			)}
 		}
 		if utf8.RuneCountInString(rule.Value) > MaxCompanyScopeValueRunes {
 			return &CompanyScopeValidationError{Message: fmt.Sprintf(
-				"企业范围第 %d 条规范化值过长: 最多 %d 个字符", i+1, MaxCompanyScopeValueRunes,
+				"기업 범위 %d번째 정규화 값이 너무 깁니다: 최대 %d자", i+1, MaxCompanyScopeValueRunes,
 			)}
 		}
 	}
@@ -632,11 +632,11 @@ LIMIT $1`, malformedIPAssetsSampled)
 		return "", nil
 	}
 	warning := fmt.Sprintf(
-		"%d 条资产的 ip 字段不是合法 IP，已跳过 IP/CIDR 范围匹配（这些资产不会被网段规则归属到企业）：%s",
-		total, strings.Join(samples, "、"),
+		"%d개 자산의 ip 필드가 올바른 IP 가 아니어서 IP/CIDR 범위 매칭을 건너뛰었습니다(이 자산들은 대역 규칙으로 기업에 귀속되지 않습니다): %s",
+		total, strings.Join(samples, ", "),
 	)
 	if total > len(samples) {
-		warning += fmt.Sprintf(" 等 %d 条", total)
+		warning += fmt.Sprintf(" 등 %d건", total)
 	}
 	return warning, nil
 }
@@ -670,7 +670,7 @@ func (s *CompanyStore) UpdateScopeInputsChecked(companyID int64, inputs []ScopeI
 	rules, invalid, errs := parseScopeInputs(inputs)
 	if invalid > 0 {
 		return 0, invalid, errs, &CompanyScopeValidationError{Message: fmt.Sprintf(
-			"企业范围包含 %d 条无效规则，未覆盖原有范围", invalid,
+			"기업 범위에 잘못된 규칙 %d건이 있어 기존 범위를 덮어쓰지 않았습니다", invalid,
 		)}
 	}
 	if err := validateParsedScopeBounds(rules); err != nil {
@@ -698,7 +698,7 @@ func (s *CompanyStore) UpdateScopeInputsChecked(companyID int64, inputs []ScopeI
 	// detach scope-derived assets or expose a lower-precedence company match.
 	warning, err := recomputeAttributionTx(tx)
 	if err != nil {
-		return 0, invalid, errs, fmt.Errorf("重新计算企业归属失败: %w", err)
+		return 0, invalid, errs, fmt.Errorf("기업 귀속 재계산 실패: %w", err)
 	}
 	logAttributionWarning(warning)
 	if err := tx.Commit(); err != nil {
