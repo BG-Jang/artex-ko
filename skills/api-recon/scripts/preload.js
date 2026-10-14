@@ -189,7 +189,9 @@
   }
 
   // --- Mock helpers ---
-  const NEGATIVE_RE = /未登录|未授权|授权|not\s*login|unauthorized|forbidden/i;
+  // Matches auth-failure messages across target locales: Chinese, Korean, English.
+  const NEGATIVE_RE =
+    /未登录|未授权|授权|로그인|인증|권한|세션.{0,6}만료|not\s*log(?:ged)?\s*in|unauthori[sz]ed|unauthenticated|forbidden|access\s*denied|login\s*required|please\s*(?:log|sign)\s*in|session\s*(?:has\s*)?expired/i;
   const tier = CONFIG.mockTier || 'L1+L2';
 
   function patchJsonBody(text) {
