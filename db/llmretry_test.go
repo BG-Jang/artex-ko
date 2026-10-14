@@ -127,7 +127,7 @@ func TestLLMRetryPolicyRoundTrip(t *testing.T) {
 		t.Fatalf("breaker interval=%v, want 90s", d)
 	}
 
-	// 越界值写进去也会被夹回区间，读出来是夹紧后的值。
+	// 범위를 벗어난 값을 써도 구간 안으로 다시 클램프되며, 읽으면 클램프된 값이 나온다.
 	if err := d.SetLLMRetryPolicy(LLMRetryPolicy{Stream: RetryRule{Attempts: 999, IntervalMS: 99_999_999}}); err != nil {
 		t.Fatal(err)
 	}
@@ -135,7 +135,7 @@ func TestLLMRetryPolicyRoundTrip(t *testing.T) {
 		t.Fatalf("stream=%+v, want the 20 / 1h caps", got)
 	}
 
-	// 键不存在 = 全默认。
+	// 키가 없으면 = 전부 기본값.
 	if _, err := d.Exec(`DELETE FROM settings WHERE key=$1`, settingLLMRetryPolicy); err != nil {
 		t.Fatal(err)
 	}

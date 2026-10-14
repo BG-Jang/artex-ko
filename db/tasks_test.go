@@ -480,8 +480,8 @@ func TestTaskContextRejectsDuplicatesAndAllowsTerminalLLMEdits(t *testing.T) {
 		t.Fatal("duplicate source task ids should be rejected")
 	}
 
-	// 终态任务仍然可以改 LLM 配置链:任务结束后主 Agent 对话继续走这条链,
-	// 链上模型不可用时必须还能换。
+	// 종료 상태 태스크도 LLM 설정 체인을 변경할 수 있다: 태스크가 끝난 뒤에도 주 Agent 대화는 이 체인을 계속 따르며,
+	// 체인의 모델을 사용할 수 없을 때 여전히 교체할 수 있어야 한다.
 	profileID, err := d.SaveProfile(&LLMProfile{
 		Name: fmt.Sprintf("terminal-chain-%d", time.Now().UnixNano()), Format: "openai",
 		Model: "terminal-model", APIKey: "test-key",
