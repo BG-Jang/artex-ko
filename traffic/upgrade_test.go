@@ -41,7 +41,7 @@ func TestUpgradeFromOldInstall(t *testing.T) {
 	if _, err := old.Exec(ftsSchema); err != nil {
 		t.Fatal(err)
 	}
-	// 三条历史流量，含一条 legacy path<>'' 的行
+	// 이전 트래픽 3건, 그중 legacy path<>'' 행 1건 포함
 	for i, row := range [][]any{
 		{"1700000000-0001", "old.example.com", ""},
 		{"1700000000-0002", "old.example.com", ""},
@@ -67,14 +67,14 @@ VALUES(?,'GET /x','','HTTP 200','老数据正文')`, row[0]); err != nil {
 		t.Fatal(err)
 	}
 
-	// ---- 新版本接管
+	// ---- 새 버전이 인계받음
 	tr, err := Open(dir, "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("新版本无法打开旧库: %v", err)
 	}
 	defer tr.Close()
 
-	// 1. 必须是同一个文件，不能悄悄开了个新空库
+	// 1. 반드시 같은 파일이어야 하며, 몰래 새 빈 DB를 열면 안 됨
 	if st2, err := os.Stat(path); err != nil || st2.Size() == 0 {
 		t.Fatalf("原索引文件异常: size=%v err=%v", st2, err)
 	}
@@ -86,12 +86,12 @@ VALUES(?,'GET /x','','HTTP 200','老数据正文')`, row[0]); err != nil {
 	}
 	t.Logf("旧库 %d 字节，新版本接管后仍是同一文件", stat.Size())
 
-	// 2. 历史数据全部可见
+	// 2. 이전 데이터가 모두 보여야 함
 	n, err := tr.Count()
 	if err != nil || n != 3 {
 		t.Fatalf("Count=(%d,%v)，应为 (3,nil) —— 历史流量丢失", n, err)
 	}
-	// 3. 历史全文索引仍可搜
+	// 3. 이전 전문 인덱스로도 여전히 검색할 수 있어야 함
 	if tr.fts {
 		rows, err := tr.query("old.example.com", "", "secret-token", 0, 10)
 		if err != nil {
@@ -101,17 +101,17 @@ VALUES(?,'GET /x','','HTTP 200','老数据正文')`, row[0]); err != nil {
 			t.Fatalf("历史全文搜索命中 %d 条，应为 2", len(rows))
 		}
 	}
-	// 4. 历史正文仍可读
+	// 4. 이전 본문을 여전히 읽을 수 있어야 함
 	if _, resp, err := tr.Get("1700000000-0001"); err != nil {
 		t.Fatalf("读取历史正文失败: %v", err)
 	} else if resp == "" {
 		t.Fatal("历史响应为空")
 	}
-	// 5. 旧库不会被误判为已启用增量回收
+	// 5. 이전 DB가 증분 회수를 사용하는 것으로 잘못 판단되지 않아야 함
 	if tr.incrementalVacuum {
 		t.Fatal("旧库被误判为已启用增量回收")
 	}
-	// 6. 删除仍然正常工作，且回收流程在旧库上能收敛
+	// 6. 삭제가 여전히 정상 동작하고, 이전 DB에서도 회수 과정이 수렴해야 함
 	deleted, err := tr.DeleteHostsExact([]string{"old.example.com"})
 	if err != nil || deleted != 2 {
 		t.Fatalf("DeleteHostsExact=(%d,%v)，应为 (2,nil)", deleted, err)
@@ -120,7 +120,7 @@ VALUES(?,'GET /x','','HTTP 200','老数据正文')`, row[0]); err != nil {
 	if n, err := tr.Count(); err != nil || n != 1 {
 		t.Fatalf("删除后 Count=(%d,%v)，应为 (1,nil)", n, err)
 	}
-	// 7. legacy path<>'' 的行没被牵连
+	// 7. legacy path<>'' 행이 영향을 받지 않아야 함
 	var legacyPath string
 	if err := tr.DB().QueryRow(`SELECT path FROM exchanges`).Scan(&legacyPath); err != nil {
 		t.Fatal(err)
@@ -148,7 +148,7 @@ func TestDowngradeToOldBinary(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	old := openLegacyIndex(t, dir) // 旧版本二进制接管
+	old := openLegacyIndex(t, dir) // 이전 버전 바이너리가 인계받음
 	defer old.Close()
 	var n int
 	if err := old.QueryRow(`SELECT COUNT(*) FROM exchanges`).Scan(&n); err != nil || n != 5 {

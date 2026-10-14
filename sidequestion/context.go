@@ -13,9 +13,8 @@ import (
 	"github.com/Autumn-27/norma/llm"
 )
 
-// User-facing side-question context errors are Korean (BRIEF 현지화 방침). The
-// summaryInstruction prompt and the "[此前摘要]"/"[新材料片段]" framing below are
-// agent-brain text sent to the model, so they stay in their benchmarked Chinese.
+// 사용자에게 보이는 곁질문 컨텍스트 오류는 한국어다(BRIEF 현지화 방침). summaryInstruction 프롬프트와 아래의
+// "[此前摘要]"/"[新材料片段]" 프레이밍은 모델에 전달되는 에이전트 브레인 텍스트이므로, 벤치마크된 중국어 그대로 둔다.
 var (
 	errSideSummaryCallCap    = errors.New("곁질문 컨텍스트 정리가 이번 처리 상한에 도달했습니다. 질문 범위를 좁힌 뒤 다시 시도해 주세요.")
 	errSideSummaryIncomplete = errors.New("곁질문 요약이 완전히 생성되지 않았습니다. 다시 시도해 주세요.")
