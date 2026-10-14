@@ -20,8 +20,8 @@ import { Progress } from "@/components/ui/progress";
 import { api, sseUrl } from "@/lib/api";
 import type { UpdateCheck, UpdateProgress } from "@/lib/types";
 
-/** 等待新版本上线的最长时间。一次升级要经过三次进程启动（暂存 → 换装 → 新版），
- *  每次都是秒级，三分钟足够覆盖慢磁盘和 Docker 容器重建。 */
+/** 새 버전이 올라올 때까지 기다리는 최대 시간. 한 번의 업그레이드는 프로세스를 세 번 시작하는 과정을 거치지만(스테이징 → 교체 → 새 버전),
+ *  각 단계는 초 단위이므로 3분이면 느린 디스크와 Docker 컨테이너 재빌드까지 충분히 커버한다. */
 const RESTART_TIMEOUT_MS = 180_000;
 
 function humanSize(n?: number): string {
@@ -46,12 +46,12 @@ export function UpdateCard() {
   const [info, setInfo] = React.useState<UpdateCheck | null>(null);
   const [checking, setChecking] = React.useState(true);
   const [progress, setProgress] = React.useState<UpdateProgress | null>(null);
-  // 与 progress 分开：暂存完成后进程就没了，SSE 会断，此时要切到轮询 /api/health。
+  // progress와 분리: 스테이징이 끝나면 프로세스가 사라지고 SSE가 끊기므로, 이때는 /api/health 폴링으로 전환해야 한다.
   const [restarting, setRestarting] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
 
-  // quiet 同时决定要不要绕过后端缓存：进页面时的自动检查用缓存（顶栏刚查过），
-  // 用户手动点「检查更新」则强制回源，否则刚发布的版本要等缓存过期才看得到。
+  // quiet은 백엔드 캐시를 우회할지도 함께 결정한다: 페이지 진입 시의 자동 검사는 캐시를 쓰고(상단바에서 방금 검사했음),
+  // 사용자가 직접 「업데이트 확인」을 누르면 원본을 강제로 조회한다. 그렇지 않으면 방금 배포된 버전이 캐시 만료 전까지 보이지 않는다.
   const check = React.useCallback(
     (quiet = false) => {
       setChecking(true);
@@ -77,10 +77,10 @@ export function UpdateCard() {
     check(true);
   }, [check]);
 
-  // 轮询 /api/health 直到版本号变化。
+  // /api/health를 폴링하며 버전 번호가 바뀔 때까지 기다린다.
   //
-  // 判据必须是"版本变了"而不是"能连上了"：换装过程中旧版本会短暂地重新起来一次
-  // （那一次只负责把 artex.new 换上去然后立刻退出），只看连通性会误判成功。
+  // 판단 기준은 「버전이 바뀌었는가」여야지 「연결이 되었는가」가 아니다: 교체 과정에서 구 버전이 잠깐 다시 떠오르는데
+  // (그때는 artex.new를 올려놓고 바로 종료하는 역할만 한다), 연결 여부만 보면 성공으로 잘못 판단하기 때문이다.
   const waitForNewVersion = React.useCallback(
     async (fromVersion: string) => {
       setRestarting(true);
@@ -99,7 +99,7 @@ export function UpdateCard() {
             }
           }
         } catch {
-          // 重启窗口内连不上是预期的，继续轮询。
+          // 재시작 구간에 연결되지 않는 것은 예상된 동작이므로 계속 폴링한다.
         }
       }
       setRestarting(false);
@@ -108,7 +108,7 @@ export function UpdateCard() {
     [t],
   );
 
-  // 订阅更新进度。SSE 不走 Next 的 /api 重写（那层会缓冲，事件推不出来）。
+  // 업데이트 진행 상황을 구독한다. SSE는 Next의 /api rewrite를 거치지 않는다(그 계층이 버퍼링해서 이벤트가 전달되지 않는다).
   const openStream = React.useCallback(
     (fromVersion: string) => {
       const es = new EventSource(sseUrl("/api/update/stream"));
@@ -132,8 +132,8 @@ export function UpdateCard() {
         }
       };
       es.onerror = () => {
-        // 进程退出时 SSE 必然断开。如果已经进入等待重启，这属于正常现象，
-        // 交给 /api/health 轮询继续判定即可。
+        // 프로세스가 종료되면 SSE는 반드시 끊긴다. 이미 재시작 대기 단계에 들어갔다면 정상적인 현상이므로,
+        // /api/health 폴링에 판정을 맡기면 된다.
         es.close();
       };
       return es;
@@ -181,13 +181,13 @@ export function UpdateCard() {
 
   const phase = progress?.phase;
   const showProgress = busy || restarting;
-  // 只有下载阶段拿得到真实百分比（按 Content-Length 算）。校验/解压/等待重启都是
-  // 时长不可知的阶段，进度条填满并加个脉冲动画表示"在忙但说不准还要多久"。
+  // 실제 퍼센트는 다운로드 단계에서만 얻을 수 있다(Content-Length 기준으로 계산). 검증/압축 해제/재시작 대기는 모두
+  // 소요 시간을 알 수 없는 단계이므로, 진행 막대를 가득 채우고 펄스 애니메이션을 줘서 "작업 중이지만 얼마나 걸릴지 모름"을 표현한다.
   const downloading = !restarting && phase === "downloading";
   const pct = downloading ? Math.max(progress?.percent ?? 0, 0) : 100;
 
   return (
-    // 设置页是多列瀑布流布局，卡片自己负责行间距并禁止跨列断开（见 page.tsx 的注释）。
+    // 설정 페이지는 다단 masonry 레이아웃이라, 카드가 스스로 행 간격을 책임지고 단 사이에서 끊기지 않도록 한다(page.tsx 주석 참고).
     <Card className="mb-4 break-inside-avoid md:mb-6">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">

@@ -160,7 +160,7 @@ function appendUploads(desc: string, atts: ChatAttachment[], t: Translator): str
 }
 
 // POLL_MS is the task-list refresh interval. Task state moves on the server (planner /
-// worker), so the list has to be pulled; 10s is plenty for status / 进度 / token 变化.
+// worker), 그래서 목록을 직접 가져와야 한다. 10초면 상태 / 진행률 / token 변화를 보기에 충분하다.
 const POLL_MS = 10_000;
 const MAX_SOURCE_TASKS = 8;
 
@@ -236,13 +236,13 @@ function fmtDateTime(unix?: number): string {
 // 값(순서 포함)만 둔다.
 const STATUS_OPTIONS: readonly TaskStatus[] = ["created", "queued", "running", "paused", "done", "failed", "timeout"];
 
-// Select 不接受空字符串 value,所以「无分类」在筛选器、新建表单和批量移动里
-// 统一用这个哨兵值,提交时再翻译成后端的 null。
+// Select는 빈 문자열 value를 받지 않으므로, "미분류"는 필터, 새 작업 폼, 일괄 이동에서
+// 이 센티넬 값으로 통일하고, 제출할 때 백엔드의 null로 변환한다.
 const UNCATEGORIZED_VALUE = "uncategorized";
 
-// 可暂停 = 非终态且未暂停,与后端 applyTaskControlWithCause 的门控一致
-// (done/failed/timeout 为终态);paused 才可继续。行内按钮与批量控制共用此判断,
-// 两边不会出现一个可点、另一个不可点的分歧。
+// 일시정지 가능 = 종료 상태가 아니고 일시정지되지 않음. 백엔드 applyTaskControlWithCause의 게이트와 일치한다
+// (done/failed/timeout이 종료 상태). paused일 때만 재개할 수 있다. 행 내 버튼과 일괄 제어가 이 판단을 공유하므로,
+// 한쪽은 클릭 가능하고 다른 쪽은 불가능한 불일치가 생기지 않는다.
 const PAUSABLE_STATUSES = new Set<TaskStatus>(["created", "queued", "running"]);
 const ARCHIVABLE_STATUSES = new Set<TaskStatus>(["paused", "done", "failed", "timeout"]);
 
@@ -401,7 +401,7 @@ export default function TasksPage() {
     [ordered, page, pageSize],
   );
 
-  // 多选删除:选择跨翻页/筛选保留,只在任务真的消失(被删或后端不再返回)时收敛。
+  // 다중 선택 삭제: 선택은 페이지 넘김과 필터를 거쳐도 유지하고, 작업이 실제로 사라졌을 때(삭제되었거나 백엔드가 더 이상 반환하지 않을 때)만 정리한다.
   const [selectedIds, setSelectedIds] = React.useState<Set<string>>(() => new Set());
 
   React.useEffect(() => {
@@ -513,11 +513,11 @@ export default function TasksPage() {
     if (!categories.some((category) => String(category.id) === categoryFilter)) setCategoryFilter("all");
   }, [categories, categoriesLoaded, categoryFilter]);
 
-  // 只在确有 running 任务时才每秒 tick——其余情况「运行时长」是静态值,空转的 tick 会白白
-  // 重渲染整张表。
+  // running 작업이 실제로 있을 때만 매초 tick한다. 그 밖의 경우 "실행 시간"은 정적 값이므로, 빈 tick이
+  // 전체 테이블을 헛되이 다시 렌더링하지 않도록 한다.
   const hasRunning = React.useMemo(() => tasks.some((t) => t.status === "running"), [tasks]);
 
-  // tick every second so running tasks' 运行时长 counts up live.
+  // running 작업의 실행 시간이 실시간으로 올라가도록 매초 tick한다.
   React.useEffect(() => {
     if (!hasRunning) return;
     setNowSec(Math.floor(Date.now() / 1000));
@@ -543,9 +543,9 @@ export default function TasksPage() {
     [load, t],
   );
 
-  // controlTask 是行内暂停/继续:批量走 controlTasksBatch,单行走单任务接口,省去
-  // 「先勾选再点批量」。清空 lastRef 让下一次轮询即使负载相同也照单接收,否则状态
-  // 回写会被去重挡掉、按钮看起来没反应。
+  // controlTask는 행 내 일시정지/재개용이다. 일괄은 controlTasksBatch를, 단일 행은 단일 작업 API를 써서, "먼저 체크하고 일괄 버튼을 누르는"
+  // 과정을 생략한다. lastRef를 비워 다음 폴링이 payload가 같아도 그대로 수신하게 한다. 그렇지 않으면 상태
+  // 반영이 중복 제거에 막혀 버튼이 반응하지 않는 것처럼 보인다.
   const controlTask = React.useCallback(
     async (id: string, action: "pause" | "resume") => {
       try {
@@ -558,7 +558,7 @@ export default function TasksPage() {
       } catch (e) {
         toast.error(t("toast.controlFailed", { action, msg: (e as Error).message }));
       } finally {
-        // 无论成败都刷新:失败多半是状态已变化,重新拉取才能让按钮回到正确形态。
+        // 성공 여부와 관계없이 새로고침한다. 실패는 대부분 상태가 이미 바뀐 경우이므로, 다시 가져와야 버튼이 올바른 모양으로 돌아온다.
         lastRef.current = "";
         load();
       }
@@ -613,8 +613,8 @@ export default function TasksPage() {
     [load, t],
   );
 
-  // deleteTasks 逐个删除所选任务:后端没有批量接口,且单次删除会连带清理资产/流量/文件,
-  // 串行执行以免一次性打爆后端;成功的从选中集移除,失败的保留以便重试。
+  // deleteTasks는 선택한 작업을 하나씩 삭제한다. 백엔드에 일괄 API가 없고 단일 삭제가 자산/트래픽/파일까지 함께 정리하므로,
+  // 순차 실행해 백엔드가 한꺼번에 과부하되지 않도록 한다. 성공한 항목은 선택 집합에서 빼고, 실패한 항목은 재시도를 위해 남긴다.
   const deleteTasks = React.useCallback(
     async (ids: string[], options: DeleteTaskOptions, onProgress: (done: number) => void) => {
       const total: DeleteCounts = {
@@ -752,7 +752,7 @@ export default function TasksPage() {
     [batchControlling, load, t],
   );
 
-  // 后端把整批分类写入放在一个事务里，所以失败项只可能是勾选后又被删掉的任务。
+  // 백엔드는 분류 일괄 쓰기를 하나의 트랜잭션으로 처리하므로, 실패 항목은 체크 후 삭제된 작업뿐일 수 있다.
   const moveSelectedTasksCategory = React.useCallback(
     async (categoryID?: number) => {
       const ids = [...selectedIds];
@@ -995,8 +995,8 @@ export default function TasksPage() {
                     <TaskRow
                       key={task.id}
                       task={task}
-                      // running 任务才吃 nowSec;其余行传 0 —— props 不变,memo 就能拦下每秒 tick
-                      // 带来的整表重渲染,只让在跑的那几行走时长。
+                      // running 작업만 nowSec을 쓰고 나머지 행은 0을 넘긴다 — props가 바뀌지 않아 memo가 매초 tick으로 인한
+                      // 전체 테이블 재렌더링을 막고, 실행 중인 행만 시간이 흐르게 한다.
                       nowSec={task.status === "running" ? nowSec : 0}
                       onDelete={deleteTask}
                       onControl={controlTask}
@@ -1166,7 +1166,7 @@ function ConcurrencySettingsDialog() {
   );
 }
 
-// TaskRow renders one row of the task table. Memoized so the per-second 运行时长 tick and
+// TaskRow renders one row of the task table. Memoized so the per-second 실행 시간 tick and
 // the POLL_MS list refresh only re-render the rows whose data actually moved — a table page
 // is 20 rows × (StatusBadge + Link + a Radix AlertDialog tree), far too heavy to rebuild
 // wholesale on every parent render.
@@ -1442,15 +1442,15 @@ function TaskPinAction({ task, onTogglePinned }: { task: Task; onTogglePinned: (
   );
 }
 
-// 三态图标分开写而非嵌套三元:仓库 Biome 基线禁 noNestedTernary。
+// 3상태 아이콘은 중첩 삼항 대신 따로 작성한다. 저장소의 Biome 기준선에서 noNestedTernary를 금지한다.
 function taskControlIcon(pending: boolean, action: "pause" | "resume" | null) {
   if (pending) return <Loader2Icon className="animate-spin" />;
   if (action === "resume") return <PlayIcon />;
   return <PauseIcon />;
 }
 
-// TaskControlButton 是行内的暂停/继续开关。终态任务渲染为 disabled 而不是隐藏,
-// 这样各行操作列宽度一致,按钮位置不会随状态跳动。
+// TaskControlButton은 행 내 일시정지/재개 토글이다. 종료 상태 작업은 숨기지 않고 disabled로 렌더링해,
+// 각 행의 작업 열 너비가 일정하게 유지되고, 버튼 위치가 상태에 따라 튀지 않도록 한다.
 function TaskControlButton({
   task,
   onControl,
@@ -2048,7 +2048,7 @@ const deleteOptionKeys: (keyof DeleteTaskOptions)[] = [
   "delete_llm_records",
 ];
 
-// DeleteOptionFields renders the「同时清理关联数据」checkbox block shared by the
+// DeleteOptionFields renders the “연관 데이터도 함께 정리” checkbox block shared by the
 // single-task and bulk delete dialogs. idPrefix keeps the label/input ids unique when
 // several dialogs live in the same table.
 function DeleteOptionFields({
@@ -2201,11 +2201,11 @@ function DeleteTaskDialog({
           <AlertDialogDescription className="break-words">
             {task.description ? (
               <>
-                「
+                “
                 <span className="break-all">
                   {task.description.length > 80 ? `${task.description.slice(0, 80)}…` : task.description}
                 </span>
-                」{t("deleteDialog.descSuffix")}
+                ”{t("deleteDialog.descSuffix")}
               </>
             ) : (
               t("deleteDialog.descNoTask")
@@ -2386,8 +2386,8 @@ function BulkDeleteTasksDialog({
   );
 }
 
-// CreateTaskSheet is the 新建任务 drawer. Its form state lives HERE, not in TasksPage: with
-// 描述/目标 held by the page component every keystroke re-rendered the whole task table
+// CreateTaskSheet is the 작업 생성 drawer. Its form state lives HERE, not in TasksPage: with
+// 설명/목표 held by the page component every keystroke re-rendered the whole task table
 // behind the drawer (plus its sticky column and 20 AlertDialog trees), which showed up as
 // input lag. Now typing only re-renders the drawer.
 function SourceTaskPicker({
@@ -2458,9 +2458,9 @@ function SourceTaskPicker({
   );
 }
 
-// CategoryPicker 是新建任务里的单选分类选择器：可搜索已有分类；输入库里没有的名称后
-// 回车（或点下拉里的「创建」）即时新建分类并选中，选中项以可移除的 tag 展示。分类是
-// 全局资源，这里即时创建与「分类管理」里手动新建等价。只允许一个分类。
+// CategoryPicker는 작업 생성에서 쓰는 단일 선택 분류 선택기다. 기존 분류를 검색할 수 있고, 목록에 없는 이름을 입력한 뒤
+// Enter(또는 드롭다운의 “생성”)를 누르면 즉시 분류를 만들어 선택한다. 선택 항목은 제거 가능한 tag로 표시한다. 분류는
+// 전역 리소스이므로 여기서 즉시 만드는 것은 “분류 관리”에서 수동으로 만드는 것과 같다. 분류는 하나만 선택할 수 있다.
 function CategoryPicker({
   categories,
   value,
@@ -2477,8 +2477,8 @@ function CategoryPicker({
   const t = useTranslations("tasksPage");
   const [inputValue, setInputValue] = React.useState("");
   const [creating, setCreating] = React.useState(false);
-  // 新建的分类要等父层重新拉取才回流到 categories，先本地留一份，避免选中的 chip 和
-  // 下拉在这段窗口里显示成「未知分类」。
+  // 새로 만든 분류는 상위 레이어가 다시 가져와야 categories에 반영되므로, 우선 로컬에 보관한다. 선택된 chip과
+  // 드롭다운이 이 구간에서 "알 수 없는 분류"로 표시되지 않도록 한다.
   const [localExtra, setLocalExtra] = React.useState<TaskCategory[]>([]);
 
   const allCategories = React.useMemo(() => {
@@ -2494,14 +2494,14 @@ function CategoryPicker({
 
   const trimmed = inputValue.trim();
   const lower = trimmed.toLowerCase();
-  // 与 base-ui 默认子串过滤保持一致，用来判断「有没有相关分类」。
+  // base-ui 기본 부분 문자열 필터와 맞춰, "관련 분류가 있는지"를 판단하는 데 쓴다.
   const matchCount = trimmed
     ? allCategories.filter((c) => c.name.toLowerCase().includes(lower)).length
     : allCategories.length;
 
   const createAndSelect = async () => {
     if (!trimmed || creating) return;
-    // 精确同名已存在则直接选中，不重复创建。
+    // 정확히 같은 이름이 이미 있으면 바로 선택하고, 중복으로 만들지 않는다.
     const existing = allCategories.find((c) => c.name.toLowerCase() === lower);
     if (existing) {
       onValueChange(existing.id);
@@ -2530,7 +2530,7 @@ function CategoryPicker({
       multiple
       value={selectedIDs}
       onValueChange={(next: string[]) => {
-        // 单选：取最新选中的一个；移除 chip（清空）则回到未分类。
+        // 단일 선택: 가장 최근에 고른 항목 하나를 취한다. chip을 제거(비움)하면 미분류로 돌아간다.
         const last = next[next.length - 1];
         onValueChange(last ? Number(last) : undefined);
         setInputValue("");
@@ -2548,7 +2548,7 @@ function CategoryPicker({
           id="task-category"
           placeholder={selectedIDs.length ? "" : t("categoryPicker.placeholder")}
           onKeyDown={(e) => {
-            // 完全无匹配时回车 = 创建；有匹配项时保留 base-ui 的「回车选中高亮项」。
+            // 일치하는 항목이 전혀 없을 때 Enter = 생성. 일치 항목이 있으면 base-ui의 “Enter로 하이라이트 항목 선택” 동작을 유지한다.
             if (e.key === "Enter" && matchCount === 0 && trimmed) {
               e.preventDefault();
               void createAndSelect();
@@ -3151,12 +3151,12 @@ function CreateTaskSheet({
   const [companyIDs, setCompanyIDs] = React.useState<number[]>([]);
   const [llmProfileIDs, setLLMProfileIDs] = React.useState<string[]>([]);
   const [creating, setCreating] = React.useState(false);
-  const [timeoutMin, setTimeoutMin] = React.useState(""); // 任务级超时(分钟);空/0 = 不限时
-  const [heartbeatMin, setHeartbeatMin] = React.useState("10"); // planner 心跳(分钟);默认10,下限10(与后端一致)
-  const [seedFirstIntent, setSeedFirstIntent] = React.useState(false); // 创建时下发种子意图,worker 免等首轮 planner 直接开跑;默认关闭,走标准先规划再执行
-  const [coverageEnabled, setCoverageEnabled] = React.useState(true); // 资产覆盖度功能;默认开。关闭=不计算/展示覆盖度、不累积范围、隐藏范围类工具(company 关联不受影响)
-  const [interceptRules, setInterceptRules] = React.useState<AssetInterceptRuleInput[]>([]); // 任务级资产拦截规则(仅本任务生效,不进全局表)
-  // 方式1 文件上传:建任务前把文件暂存到 drafts/<draftId>/uploads/,拿回绝对路径追加进描述。
+  const [timeoutMin, setTimeoutMin] = React.useState(""); // 작업 단위 시간 초과(분). 비움/0 = 무제한
+  const [heartbeatMin, setHeartbeatMin] = React.useState("10"); // planner 하트비트(분). 기본 10, 하한 10(백엔드와 일치)
+  const [seedFirstIntent, setSeedFirstIntent] = React.useState(false); // 생성 시 시드 인텐트를 내려보내 worker가 첫 planner 라운드를 기다리지 않고 바로 실행하게 한다. 기본값은 꺼짐(표준 흐름: 먼저 계획 후 실행)
+  const [coverageEnabled, setCoverageEnabled] = React.useState(true); // 자산 커버리지 기능. 기본 켜짐. 끄면 커버리지를 계산/표시하지 않고 범위를 누적하지 않으며 범위 관련 도구를 숨긴다(company 연관에는 영향 없음)
+  const [interceptRules, setInterceptRules] = React.useState<AssetInterceptRuleInput[]>([]); // 작업 단위 자산 차단 규칙(이 작업에만 적용, 전역 테이블에는 넣지 않음)
+  // 방식 1 파일 업로드: 작업 생성 전에 파일을 drafts/<draftId>/uploads/에 임시 저장하고, 반환된 절대 경로를 설명에 덧붙인다.
   const [uploading, setUploading] = React.useState(false);
   const [uploadCount, setUploadCount] = React.useState(0);
   const draftIdRef = React.useRef<string>("");
@@ -3179,7 +3179,7 @@ function CreateTaskSheet({
   // absolute paths to the description; the task's agents open them by path via Read/Bash.
   async function pickFiles(files: FileList | null) {
     if (!files || files.length === 0) return;
-    // crypto.randomUUID 仅在安全上下文可用(https/localhost);经 IP+http 访问时降级。
+    // crypto.randomUUID는 보안 컨텍스트(https/localhost)에서만 쓸 수 있다. IP+http로 접근하면 대체 경로로 내려간다.
     if (!draftIdRef.current) {
       draftIdRef.current =
         globalThis.crypto?.randomUUID?.() ?? `d${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
@@ -3209,7 +3209,7 @@ function CreateTaskSheet({
     setCreating(true);
     try {
       const timeoutSec = Math.max(0, Math.floor(Number(timeoutMin) || 0)) * 60;
-      const heartbeatSec = Math.max(10, Math.floor(Number(heartbeatMin) || 10)) * 60; // 下限 10min，与后端归一一致
+      const heartbeatSec = Math.max(10, Math.floor(Number(heartbeatMin) || 10)) * 60; // 하한 10분, 백엔드 정규화와 일치
       await api.createTask({
         name: name.trim(),
         categoryId: categoryID,
@@ -3258,8 +3258,8 @@ function CreateTaskSheet({
           <PlusIcon /> {t("create.newTask")}
         </Button>
       </SheetTrigger>
-      {/* 45vw 宽的右侧抽屉:整屏高度可滚动,长表单不再受弹窗高度限制。窄屏退化为全宽。
-            内容为 flex 列:头/脚固定,中间字段区 flex-1 独立滚动。 */}
+      {/* 45vw 너비의 오른쪽 서랍: 화면 전체 높이에서 스크롤할 수 있어 긴 폼이 팝업 높이에 제한되지 않는다. 좁은 화면에서는 전체 너비로 바뀐다.
+            내용은 flex 열: 헤더/푸터는 고정, 가운데 필드 영역(flex-1)은 독립적으로 스크롤된다. */}
       <SheetContent
         ref={sheetContentRef}
         side="right"
@@ -3317,7 +3317,7 @@ function CreateTaskSheet({
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
               />
-              {/* 上传文件(可多选):暂存到 drafts/,把绝对路径追加进上方描述,worker 据此 Read/Bash 打开。 */}
+              {/* 파일 업로드(다중 선택 가능): drafts/에 임시 저장하고, 절대 경로를 위 설명에 덧붙인다. worker는 이를 기반으로 Read/Bash로 연다. */}
               <div className="flex flex-wrap items-center gap-2">
                 <input
                   ref={fileInputRef}
@@ -3388,7 +3388,7 @@ function CreateTaskSheet({
               <FieldDescription>{t("create.llmHint")}</FieldDescription>
             </Field>
 
-            {/* 高级参数默认折叠:超时/心跳/首个意图,展开才占空间,常用路径保持清爽。 */}
+            {/* 고급 매개변수는 기본적으로 접혀 있다: 시간 초과/하트비트/첫 인텐트. 펼쳐야 공간을 차지하므로, 자주 쓰는 경로는 간결하게 유지한다. */}
             <Collapsible>
               <CollapsibleTrigger className="group flex w-full items-center gap-2 border-t pt-4 text-sm font-medium">
                 <ChevronRightIcon className="text-muted-foreground size-4 transition-transform group-data-[state=open]:rotate-90" />

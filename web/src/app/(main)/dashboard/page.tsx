@@ -45,7 +45,7 @@ import { cn } from "@/lib/utils";
 // ── helpers ──────────────────────────────────────────────────────────────────
 
 // Compact relative time. Returns the "{n}{unit}" fragment, or null when there is
-// no timestamp; the caller wraps it with the localized "{value} 전 / 前" suffix.
+// no timestamp; the caller wraps it with the localized "{value} ago" suffix.
 function fmtRel(ts?: string | number): string | null {
   if (!ts) return null;
   const ms = Date.now() - (typeof ts === "number" ? ts * 1000 : Date.parse(ts as string));
@@ -330,14 +330,14 @@ export default function DashboardPage() {
   // tasks whose llm_profile_id is null/undefined used the active default profile
   const defaultProfileId = activeProfile ? Number(activeProfile.id) : null;
 
-  // 数据源开关：旧版 = activity（task.tokens + 会话），新版 = llm_usage 计量账本。
+  // 데이터 소스 전환: 구버전 = activity (task.tokens + 세션), 신버전 = llm_usage 계측 원장.
   const [tokenVersion, setTokenVersion] = React.useState<"old" | "new">("old");
-  // selected profile tab: "all" = 全部; number = specific profile id
+  // 선택된 profile 탭: "all" = 전체; 숫자 = 특정 profile id
   const [tokenTab, setTokenTab] = React.useState<number | null | "all">("all");
   // day range for the daily bar chart
   const [tokenDays, setTokenDays] = React.useState<7 | 30 | 90 | 180 | 365>(30);
 
-  // profile 名 → id，用于把 llm_usage 的 profile_name 映射到现有 profile 分栏。
+  // profile 이름 → id 매핑. llm_usage 의 profile_name 을 기존 profile 탭에 대응시키기 위함입니다.
   const profileIdByName = React.useMemo(() => {
     const m = new Map<string, number>();
     for (const p of llmProfiles) m.set(p.name, Number(p.id));
@@ -346,7 +346,7 @@ export default function DashboardPage() {
 
   type Bucket = { input: number; output: number; cacheRead: number; cacheWrite: number; taskCount: number };
 
-  // 旧版：按 profile 归桶（来自 activity 的 task.tokens + 会话用量）。
+  // 구버전: profile 별 버킷 (activity 의 task.tokens + 세션 사용량 기준).
   const tokenByProfileOld = React.useMemo<Map<number | null, Bucket>>(() => {
     const m = new Map<number | null, Bucket>();
     const fold = (key: number | null, inp: number, out: number, cr: number, cw: number, addTask: boolean) => {
@@ -382,11 +382,11 @@ export default function DashboardPage() {
     return m;
   }, [tasks, convTokens, defaultProfileId]);
 
-  // 新版：按 profile 归桶（来自 llm_usage 全局聚合，逐次调用精确）。
+  // 신버전: profile 별 버킷 (llm_usage 전역 집계 기준, 호출 단위로 정확).
   const tokenByProfileNew = React.useMemo<Map<number | null, Bucket>>(() => {
     const m = new Map<number | null, Bucket>();
     for (const p of usageStats?.by_profile ?? []) {
-      // 未匹配到现有 profile（改名/删除/空名）→ 落到默认桶，仍计入「全部」。
+      // 현재 profile 과 매칭되지 않음 (이름 변경/삭제/빈 이름) → 기본 버킷으로 보내되, "전체"에는 계속 포함합니다.
       const key = profileIdByName.get(p.profile_name) ?? defaultProfileId;
       const prev = m.get(key) ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, taskCount: 0 };
       m.set(key, {
@@ -424,7 +424,7 @@ export default function DashboardPage() {
       : { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, taskCount: 0 };
   }, [tokenTab, tokenByProfile]);
 
-  // 旧版每日：把任务/会话的总量按其创建日期归桶（近似，非真实每日消耗）。
+  // 구버전 일별: 작업/세션 총량을 생성일 기준으로 버킷팅 (근사치이며, 실제 일별 소비량이 아님).
   const dailyTokenDataOld = React.useMemo(() => {
     const now = new Date();
     now.setDate(now.getDate() - tokenDays);
@@ -451,7 +451,7 @@ export default function DashboardPage() {
     return [...m.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([date, v]) => ({ date: date.slice(5), ...v }));
   }, [tasks, convTokens, tokenDays, tokenTab, defaultProfileId]);
 
-  // 新版每日：来自 llm_usage 的真实每日消耗（ts 是实际调用时刻）。
+  // 신버전 일별: llm_usage 의 실제 일별 소비량 (ts 는 실제 호출 시각).
   const dailyTokenDataNew = React.useMemo(() => {
     const now = new Date();
     now.setDate(now.getDate() - tokenDays);
@@ -505,7 +505,7 @@ export default function DashboardPage() {
 
       {/* ── Row 1: 5 stat cards ── */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-        {/* 活跃任务 */}
+        {/* 활성 작업 */}
         <Card className="gap-1">
           <CardHeader className="pb-0">
             <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
@@ -536,7 +536,7 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        {/* 确认发现 */}
+        {/* 확인된 발견 */}
         <Card className="gap-1">
           <CardHeader className="pb-0">
             <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
@@ -560,7 +560,7 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        {/* 资产节点 */}
+        {/* 자산 노드 */}
         <Card className="gap-1">
           <CardHeader className="pb-0">
             <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
@@ -571,7 +571,7 @@ export default function DashboardPage() {
           <CardContent className="text-[10px] text-muted-foreground">{t("crossTaskShared")}</CardContent>
         </Card>
 
-        {/* 流量交互 */}
+        {/* 트래픽 상호작용 */}
         <Card className="gap-1">
           <CardHeader className="pb-0">
             <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
@@ -591,7 +591,7 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        {/* LLM 用量 */}
+        {/* LLM 사용량 */}
         <Card className="gap-1">
           <CardHeader className="pb-0">
             <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
@@ -611,14 +611,14 @@ export default function DashboardPage() {
         </Card>
       </div>
 
-      {/* ── Row 2: LLM Token 消耗 ── */}
+      {/* ── Row 2: LLM Token 소비 ── */}
       <Card className="p-4">
         {/* Header */}
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-1.5 text-xs font-semibold">
             <ZapIcon className="size-3.5 text-muted-foreground" />
             {t("tokenConsumption")}
-            {/* 数据源开关：旧版=activity 统计（含历史任务），新版=llm_usage 计量账本（更准，仅覆盖启用后） */}
+            {/* 데이터 소스 전환: 구버전=activity 통계(과거 작업 포함), 신버전=llm_usage 계측 원장(더 정확하지만 활성화 이후만 포함) */}
             <div className="ml-1 flex gap-0.5 rounded-md border bg-muted/30 p-0.5">
               {(
                 [
@@ -714,7 +714,7 @@ export default function DashboardPage() {
             {/* Per-type bars */}
             <div className="space-y-3">
               {(() => {
-                // input 已含缓存；拆成不重叠三段：未命中输入 + 缓存命中 + 输出 = 总量。
+                // input 은 이미 캐시를 포함하므로, 겹치지 않는 세 구간으로 나눕니다: 캐시 미스 입력 + 캐시 히트 + 출력 = 전체.
                 const total = displayedTokens.input + displayedTokens.output;
                 return [
                   {
@@ -757,7 +757,7 @@ export default function DashboardPage() {
 
             {/* Cache hit rate */}
             {(() => {
-              // input 已含缓存 → 命中率 = 缓存命中 / 总输入。
+              // input 은 이미 캐시를 포함 → 적중률 = 캐시 히트 / 전체 입력.
               const denominator = displayedTokens.input;
               const hitPct = denominator > 0 ? Math.round((displayedTokens.cacheRead / denominator) * 100) : 0;
               return (
@@ -867,9 +867,9 @@ export default function DashboardPage() {
         </div>
       </Card>
 
-      {/* ── Row 3: 活动流 | 发现 ── */}
+      {/* ── Row 3: 활동 스트림 | 발견 ── */}
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-        {/* 活动流 */}
+        {/* 활동 스트림 */}
         <Card className="p-4">
           <div className="mb-3 flex items-center justify-between">
             <div className="flex items-center gap-1.5 text-xs font-semibold">
@@ -931,7 +931,7 @@ export default function DashboardPage() {
           </div>
         </Card>
 
-        {/* 发现 */}
+        {/* 발견 */}
         <Card className="p-4">
           <div className="mb-3 flex items-center justify-between">
             <div className="flex items-center gap-1.5 text-xs font-semibold">
@@ -976,7 +976,7 @@ export default function DashboardPage() {
         </Card>
       </div>
 
-      {/* ── Row 4: 任务表格 ── */}
+      {/* ── Row 4: 작업 테이블 ── */}
       <Card className="overflow-hidden p-0">
         <div className="flex items-center justify-between border-b px-4 py-3">
           <div className="flex items-center gap-1.5 text-xs font-semibold">
@@ -1071,9 +1071,9 @@ export default function DashboardPage() {
         </table>
       </Card>
 
-      {/* ── Row 5: 资产分布 | 流量状态码 | 拦截 & 待审批 ── */}
+      {/* ── Row 5: 자산 분포 | 트래픽 상태 코드 | 차단 & 승인 대기 ── */}
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-        {/* 资产分布 */}
+        {/* 자산 분포 */}
         <Card className="p-4">
           <SectionTitle icon={NetworkIcon} sub={t("byType")}>
             {t("assetDistribution")}
@@ -1105,7 +1105,7 @@ export default function DashboardPage() {
           </div>
         </Card>
 
-        {/* 流量状态码 */}
+        {/* 트래픽 상태 코드 */}
         <Card className="p-4">
           <SectionTitle icon={ActivityIcon} sub={t("requestCount", { count: traffic.length })}>
             {t("trafficStatusCodes")}
@@ -1157,7 +1157,7 @@ export default function DashboardPage() {
           )}
         </Card>
 
-        {/* 系统状态 & 待审批 */}
+        {/* 시스템 상태 & 승인 대기 */}
         <Card className="p-4">
           <SectionTitle icon={ShieldCheckIcon}>{t("systemStatus")}</SectionTitle>
 

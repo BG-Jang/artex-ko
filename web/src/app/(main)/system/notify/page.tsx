@@ -32,14 +32,14 @@ import { ConfigField, FilterSummary } from "./_components/channel-form";
 import { DeliveryList } from "./_components/delivery-list";
 import { formatBacklog, StatTile } from "./_components/stat-tile";
 
-// 本页只负责编排：加载数据、维护表单状态、调用接口。
-// 字段定义与解析在 _components/channel-fields.ts，控件与过滤摘要在
-// _components/channel-form.tsx，投递记录在 _components/delivery-list.tsx——
-// 拆开是因为它们各自能被单独读懂，而挤在一个文件里时这个页面接近 1100 行。
+// 이 페이지는 오케스트레이션만 담당한다: 데이터 로드, 폼 상태 관리, API 호출.
+// 필드 정의와 파싱은 _components/channel-fields.ts, 컨트롤과 필터 요약은
+// _components/channel-form.tsx, 전달 기록은 _components/delivery-list.tsx에 있다 —
+// 나눈 이유는 각각 단독으로 읽을 수 있게 하기 위해서이며, 한 파일에 몰아 두면 이 페이지가 1100줄 가까이 되기 때문이다.
 export default function NotifyPage() {
   const t = useTranslations("notifyPage");
-  // 渠道类型展示名：已知的 6 种走 i18n（notifyPage.kind.<kind>），
-  // 后端若回传未知类型则原样显示该 key（保留原来的 `?? ch.kind` 语义）。
+  // 채널 타입 표시명: 알려진 6종은 i18n(notifyPage.kind.<kind>)으로 표시하고,
+  // 백엔드가 알 수 없는 타입을 주면 그 key를 그대로 표시한다(기존 `?? ch.kind` 의미 유지).
   const kindLabel = (k: string) => (k in CHANNEL_FIELDS ? t(`kind.${k}`) : k);
   const [meta, setMeta] = React.useState<NotificationMeta | null>(null);
   const [channels, setChannels] = React.useState<NotificationChannel[]>([]);
@@ -64,8 +64,8 @@ export default function NotifyPage() {
         setDigestMin(m.digest_interval_min);
       })
       .catch((e) => toast.error(t("toast.loadConfigFailed", { msg: (e as Error).message })));
-    // 渠道列表加载失败要报出来：静默失败会显示成「一个渠道都没有」，
-    // 用户会以为配置丢了，比直接报错更让人慌。
+    // 채널 목록 로드 실패는 반드시 알려야 한다: 조용히 실패하면 「채널이 하나도 없음」으로 보여서,
+    // 사용자는 설정이 사라진 줄 알게 된다. 직접 에러를 띄우는 것보다 훨씬 더 사용자를 불안하게 만든다.
     api
       .notifyChannels()
       .then(setChannels)
@@ -90,7 +90,7 @@ export default function NotifyPage() {
 
   function openEdit(ch: NotificationChannel) {
     setEditing(ch);
-    // filter 在后端是 Go 结构体，永远序列化成对象（不会是 null），所以不需要兜底。
+    // filter는 백엔드에서 Go 구조체이므로 항상 객체로 직렬화된다(null이 되지 않으므로 기본값 처리가 필요 없다).
     const f = ch.filter;
     setForm({
       name: ch.name,
@@ -98,8 +98,8 @@ export default function NotifyPage() {
       mode: ch.mode,
       enabled: ch.enabled,
       ratePerMin: String(ch.rate_per_min),
-      // 后端回显的 config 里凭据是掩码值；原样放进表单，提交时原样送回，
-      // 后端据此保留库中原值。
+      // 백엔드가 돌려준 config의 자격 증명은 마스킹 값이다. 그대로 폼에 넣고, 제출할 때 그대로 돌려보내면
+      // 백엔드가 이를 보고 DB의 원래 값을 유지한다.
       config: { ...ch.config },
       minSeverity: f.min_severity ?? "",
       includeText: (f.vulnclass_include ?? []).join("\n"),
@@ -111,17 +111,17 @@ export default function NotifyPage() {
     setOpen(true);
   }
 
-  // buildConfig 把表单状态转成渠道 config。
+  // buildConfig는 폼 상태를 채널 config로 변환한다.
   //
-  // 唯一的规则，两类值：
-  //   - 掩码值（"__masked__..."）原样送回 → 后端解读为「这个字段没改，保留库中原值」
-  //   - 其余一律按用户输入提交，空串即「清空该字段」
+  // 규칙은 하나이며, 값은 두 종류다:
+  //   - 마스킹 값("__masked__...")은 그대로 돌려보냄 → 백엔드는 「이 필드는 바뀌지 않았으니 DB의 원래 값을 유지」로 해석
+  //   - 그 밖의 값은 모두 사용자 입력으로 제출하며, 빈 문자열이면 「이 필드를 비움」을 뜻함
   //
-  // 之所以不特殊照顾凭据字段（比如「凭据留空就跳过」），是因为那会让用户**无法清除**
-  // 一个设错的密钥——界面上没有任何操作能表达「我要把它删掉」。现在的规则下，
-  // 清空输入框就等于清空该字段，语义唯一且用户可控。
-  // 掩码值不会出现在输入框里（见 ConfigField），所以「框里有字」永远等于
-  // 「用户主动填的」。
+  // 「자격 증명은 비워 두면 건너뜀」 같은 특별 처리를 하지 않는 이유는, 그러면 사용자가 잘못 설정한 키를
+  // **지울 수 없게** 되기 때문이다. 화면에는 「이것을 삭제하겠다」를 표현할 방법이 없다. 현재 규칙에서는
+  // 입력창을 비우는 것이 곧 해당 필드를 비우는 것이므로, 의미가 하나이고 사용자가 통제할 수 있다.
+  // 마스킹 값은 입력창에 나타나지 않으므로(ConfigField 참고), 「입력창에 글자가 있음」은 항상
+  // 「사용자가 직접 입력한 것」과 같다.
   function buildConfig(): Record<string, unknown> {
     const defs = CHANNEL_FIELDS[form.kind] ?? [];
     const out: Record<string, unknown> = {};
@@ -207,7 +207,7 @@ export default function NotifyPage() {
       const r = await api.notifyTestChannel(editing.id);
       toast.success(t("toast.testSent", { ms: r.latency_ms }));
     } catch (e) {
-      // 后端把渠道返回的原始错误如实回传，这是排查配置的唯一线索，原样展示。
+      // 백엔드가 채널의 원본 에러를 그대로 돌려준다. 설정을 점검할 수 있는 유일한 단서이므로 가공 없이 그대로 보여준다.
       toast.error(t("toast.testFailed", { msg: (e as Error).message }), { duration: 12000 });
     } finally {
       setTesting(false);
@@ -275,8 +275,8 @@ export default function NotifyPage() {
           <p className="text-muted-foreground text-sm">{t("subtitle")}</p>
         </div>
         {meta && (
-          // 用 div 而不是 label：Switch 自带 aria-label，外面再套一层 label
-          // 既关联不到任何原生控件，又会让点击文字看起来应该能切换。
+          // div를 쓰고 label을 쓰지 않는 이유: Switch 자체에 aria-label이 있고, 바깥에 label을 한 겹 더 씌우면
+          // 어떤 네이티브 컨트롤과도 연결되지 않으면서, 텍스트를 클릭하면 전환될 것처럼 보이게 된다.
           <div className="flex shrink-0 items-center gap-2 text-sm">
             <span className="text-muted-foreground">{t("globalSwitch")}</span>
             <Switch
@@ -306,7 +306,7 @@ export default function NotifyPage() {
           <StatTile
             label={t("stats.backlog")}
             value={formatBacklog(meta.stats.backlog_age_ms, t)}
-            // 积压年龄比积压条数有用得多：积压 3 条可以是从 3 秒到 3 小时。
+            // 적체 「나이」가 적체 「건수」보다 훨씬 유용하다: 3건이 쌓여 있어도 3초 전 것일 수도, 3시간 전 것일 수도 있다.
             hint={meta.stats.backlog_age_ms > 5 * 60_000 ? t("stats.backlogStuck") : undefined}
             tone={meta.stats.backlog_age_ms > 5 * 60_000 ? "red" : undefined}
           />
@@ -376,10 +376,10 @@ export default function NotifyPage() {
                   <div className="flex items-center gap-2">
                     <BellIcon className="text-muted-foreground size-4 shrink-0" />
                     <CardTitle className="truncate text-base">{ch.name}</CardTitle>
-                    {/* 卡片整体可点（进入编辑），所以这两个控件必须各自吞掉冒泡，
-                        否则开关/删除会顺带触发编辑。把 stopPropagation 挂在控件自己
-                        身上，而不是套一层 div：套 div 会造出一个「看起来可交互但没有
-                        角色」的静态元素，既触发 a11y 告警，语义上也说不通。 */}
+                    {/* 카드 전체가 클릭 가능하므로(편집 진입), 이 두 컨트롤은 각자 이벤트 버블링을 막아야 한다.
+                        그렇지 않으면 토글/삭제가 편집도 함께 트리거한다. stopPropagation은 컨트롤 자신에 달고,
+                        div로 한 겹 감싸지 않는다: div로 감싸면 「상호작용 가능해 보이지만 역할이 없는」 정적 요소가 생겨
+                        a11y 경고를 유발하고 의미상으로도 맞지 않는다. */}
                     <div className="ml-auto flex items-center gap-2">
                       <Switch
                         checked={ch.enabled}
@@ -393,8 +393,8 @@ export default function NotifyPage() {
                         aria-label={t("aria.delete")}
                         onClick={(e) => {
                           e.stopPropagation();
-                          // void 显式丢弃 Promise：removeChannel 自己 catch 并 toast，
-                          // 这里不需要 await（onClick 不是 async）。
+                          // void로 Promise를 명시적으로 버린다: removeChannel이 자체적으로 catch하고 toast를 띄우므로,
+                          // 여기서는 await가 필요 없다(onClick은 async가 아니다).
                           void removeChannel(ch);
                         }}
                       >
@@ -438,7 +438,7 @@ export default function NotifyPage() {
                 <Select
                   value={form.kind}
                   onValueChange={(v) => {
-                    // 换类型等于换一套凭据字段，不能把旧配置合并进来。
+                    // 타입을 바꾸면 자격 증명 필드 세트가 통째로 바뀌므로, 이전 설정을 병합해서 가져오면 안 된다.
                     setF({ kind: v, config: {} });
                   }}
                   disabled={!!editing}

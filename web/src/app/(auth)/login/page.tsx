@@ -27,7 +27,7 @@ export default function LoginPage() {
   const [readToEnd, setReadToEnd] = useState(false);
   const termsBodyRef = useRef<HTMLDivElement>(null);
 
-  // 滚动到条款底部（含无需滚动即可完整展示的情况）方可点击「同意」。
+  // 약관 하단까지 스크롤해야 (스크롤 없이 전체가 보이는 경우 포함) 「동의」를 클릭할 수 있습니다.
   function handleTermsScroll() {
     const el = termsBodyRef.current;
     if (!el) return;
@@ -36,18 +36,18 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (!termsOpen) return;
-    // 打开时重置，并处理内容本就不足一屏、无法触发滚动的场景。
+    // 열릴 때 초기화하고, 내용이 한 화면보다 작아 스크롤이 발생하지 않는 경우도 처리합니다.
     setReadToEnd(false);
     const el = termsBodyRef.current;
     if (el && el.scrollHeight <= el.clientHeight + 8) setReadToEnd(true);
   }, [termsOpen]);
 
   useEffect(() => {
-    // 已登录直接进主界面（静态导出下无 middleware 代劳这层跳转）。
+    // 이미 로그인된 경우 바로 메인 화면으로 이동합니다 (정적 export 에는 middleware 가 없어 이 리다이렉트를 대신 처리해 주지 않음).
     const token = auth.getToken();
     if (token) {
-      // localStorage 可能仍有凭据但 cookie 已丢失。先同步，再发起全新请求，
-      // 避免服务端守卫或路由缓存把跳转送回仍处于 checking 状态的登录页。
+      // localStorage 에는 자격 증명이 남아 있지만 쿠키는 사라졌을 수 있습니다. 먼저 동기화한 뒤 새 요청을 보내서,
+      // 서버 가드나 라우트 캐시가 checking 상태인 로그인 페이지로 리다이렉트를 되돌리지 않도록 합니다.
       auth.setToken(token);
       window.location.replace("/function/tasks");
       return;

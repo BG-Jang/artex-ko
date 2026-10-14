@@ -1,5 +1,5 @@
 // Centralised status → color semantics, reused across the whole app.
-// Spec §8.3: 意图 / 覆盖 / 任务 / 严重度 each have a consistent color set.
+// Spec §8.3: 의도 / 커버리지 / 작업 / 심각도 각각은 일관된 색상 세트를 가집니다.
 // User-facing labels live in the "status" message namespace (ko/zh); the maps
 // here only carry the color tone, keyed by the same status value.
 
@@ -11,7 +11,7 @@ export const toneClasses: Record<Tone, string> = {
   green: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
   amber: "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/20",
   red: "bg-red-500/15 text-red-600 dark:text-red-400 border-red-500/20",
-  // rose 用作「严重」——实心高强调,视觉上明显高于「高危」的软红描边。
+  // rose는 「심각」에 사용: 채워진 고강조 스타일로, 「고위험」의 연한 빨간 테두리보다 시각적으로 뚜렷이 높습니다.
   rose: "bg-rose-600 text-white border-rose-600 dark:bg-rose-600 dark:text-white",
   violet: "bg-violet-500/15 text-violet-600 dark:text-violet-400 border-violet-500/20",
   slate: "bg-slate-500/15 text-slate-600 dark:text-slate-400 border-slate-500/20",
@@ -37,13 +37,13 @@ const intent: Record<string, StatusMeta> = {
   running: { tone: "blue" },
   paused: { tone: "amber" },
   done: { tone: "green" },
-  // blocked = 模型/API/网络故障重试用尽，这条意图基本没真正探成（非目标拦截）。
+  // blocked = 모델/API/네트워크 장애로 재시도를 모두 소진, 이 의도는 사실상 제대로 탐색되지 못함(목표 차단이 아님).
   blocked: { tone: "red" },
-  // exhausted = 达到步数/时间预算被中途掐断、只写回部分结果（非方向已探尽）。
+  // exhausted = 단계 수/시간 예산에 도달해 중간에 중단되고 부분 결과만 기록됨(방향이 모두 탐색된 것은 아님).
   exhausted: { tone: "violet" },
-  // stopped = 历史软删除状态（保留,历史数据）。
+  // stopped = 이력용 소프트 삭제 상태(기록 보존, 이력 데이터).
   stopped: { tone: "slate" },
-  // deleted = 用户假删除了该意图（保留节点与血缘，删除原因见 delete_reason 字段）。
+  // deleted = 사용자가 해당 의도를 가짜 삭제함(노드와 계보는 보존, 삭제 사유는 delete_reason 필드 참고).
   deleted: { tone: "slate" },
 };
 
@@ -100,8 +100,8 @@ const node: Record<string, StatusMeta> = {
   tombstoned: { tone: "neutral" },
 };
 
-// 推送投递状态。sending 用 blue 而不是 amber：它不是「有问题」，
-// 而是「已被领取、正在发」，与 pending 的等待语义要能区分开。
+// 푸시 전달 상태. sending은 amber가 아닌 blue를 사용합니다: 「문제 있음」이 아니라
+// 「이미 가져가서 전송 중」이므로, pending의 대기 의미와 구분되어야 합니다.
 const delivery: Record<string, StatusMeta> = {
   pending: { tone: "amber" },
   sending: { tone: "blue" },

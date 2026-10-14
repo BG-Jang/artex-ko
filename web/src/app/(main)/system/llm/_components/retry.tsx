@@ -1,13 +1,13 @@
 "use client";
 
-// LLM 重试配置的共用件：五层重试各自的「次数 + 间隔」。
+// LLM 재시도 설정의 공용 부품: 다섯 계층 재시도 각각의 「횟수 + 간격」.
 //
-// 五层从内到外：建连(SDK) → 空响应(SDK) → 同 provider 安全窗口 → 轮询熔断 → 意图重跑。
-// 前三层跟着端点走，所以每个模型配置都能覆盖全局默认；后两层是进程级的，只有全局一份。
+// 다섯 계층은 안에서 바깥으로: 연결 수립(SDK) → 빈 응답(SDK) → 같은 provider 안전 구간 → 폴링 서킷 브레이커 → 의도 재실행.
+// 앞의 세 계층은 엔드포인트에 종속되므로 모델 설정마다 전역 기본값을 덮어쓸 수 있고, 뒤의 두 계층은 프로세스 단위라 전역에 하나만 있다.
 //
-// 所有输入都遵循同一套「留空 = 不配置」语义，与后端 db.RetryRule 一致：
-//   次数   空/0 = 用内置默认 | -1 = 关闭这层重试 | >0 = 用这个次数
-//   间隔   空/0 = 用这层原本的指数退避 | >0 = 改用这个固定毫秒间隔
+// 모든 입력은 같은 「비워 두면 = 설정 안 함」 의미를 따르며, 백엔드 db.RetryRule과 일치한다:
+//   횟수   빈 값/0 = 내장 기본값 | -1 = 이 계층 재시도 끔 | >0 = 이 횟수 사용
+//   간격   빈 값/0 = 이 계층 원래의 지수 백오프 | >0 = 대신 이 고정 밀리초 간격 사용
 
 import * as React from "react";
 
@@ -33,8 +33,8 @@ const ZERO_POLICY: LLMRetryPolicy = {
   intent: ZERO_RULE,
 };
 
-// 每层的「次数留空时的默认值」，仅用于输入框占位符。其余文案（标题 / 触发 / 说明等）
-// 走 i18n（llmPage.retryLayer.<层>.*），按运行时语言渲染。
+// 계층별 「횟수를 비웠을 때의 기본값」이며, 입력창 placeholder에만 쓴다. 그 밖의 문구(제목 / 트리거 / 설명 등)는
+// i18n(llmPage.retryLayer.<계층>.*)을 거쳐 실행 시점의 언어로 렌더링한다.
 export const RETRY_LAYERS = {
   connect: { defAttempts: 3 },
   empty: { defAttempts: 2 },
@@ -45,7 +45,7 @@ export const RETRY_LAYERS = {
 
 type LayerKey = keyof typeof RETRY_LAYERS;
 
-/** 毫秒的人话，只用于在输入框旁边回显，免得数零。 */
+/** 밀리초를 사람이 읽기 쉬운 단위로 바꾼다. 입력창 옆에 되짚어 보여주는 용도이며, 0을 세지 않도록 하기 위함이다. */
 function humanMs(ms: number) {
   if (!Number.isFinite(ms) || ms <= 0) return "";
   if (ms < 1000) return `${ms}ms`;
@@ -53,7 +53,7 @@ function humanMs(ms: number) {
   return `${Number((ms / 60_000).toFixed(2))}min`;
 }
 
-/** 受控数字输入：空串 ↔ 0，中间态（"-"、"1e"）原样留在本地，不打扰父级。 */
+/** 제어형 숫자 입력: 빈 문자열 ↔ 0 변환, 중간 상태("-", "1e")는 로컬에 그대로 두고 부모에게 알리지 않는다. */
 function NumField({
   id,
   value,
@@ -68,8 +68,8 @@ function NumField({
   min: number;
 }) {
   const [text, setText] = React.useState(value === 0 ? "" : String(value));
-  // 父级换了一整套值（读取到策略、切换配置）时跟上；自己敲字时不会走到这里，
-  // 因为那时 value 已经等于本地文本 parse 后的结果。
+  // 부모가 값 세트 전체를 바꾸면(정책을 읽어왔을 때, 설정을 전환했을 때) 따라간다. 직접 타이핑할 때는 여기에 오지 않는데,
+  // 그때는 value가 이미 로컬 텍스트를 parse한 결과와 같기 때문이다.
   React.useEffect(() => {
     const incoming = value === 0 ? "" : String(value);
     setText((cur) => (Number(cur || 0) === value ? cur : incoming));
@@ -91,7 +91,7 @@ function NumField({
   );
 }
 
-/** 一层重试的两个旋钮。idPrefix 用来在同一页出现多次时保住 label 的 htmlFor。 */
+/** 한 계층 재시도의 두 가지 설정값. idPrefix는 같은 페이지에 여러 번 나타날 때 label의 htmlFor를 유지하기 위해 쓴다. */
 export function RetryRuleFields({
   layer,
   idPrefix,
@@ -103,7 +103,7 @@ export function RetryRuleFields({
   idPrefix: string;
   value: LLMRetryRule;
   onChange: (r: LLMRetryRule) => void;
-  /** true = 配置抽屉里的紧凑版：省掉展开说明，只留「什么错误会走到这层」这一句 */
+  /** true = 설정 드로어 안의 compact 버전: 펼친 설명은 생략하고 「어떤 에러가 이 계층까지 오는지」 한 문장만 남긴다 */
   compact?: boolean;
 }) {
   const t = useTranslations("llmPage");
@@ -116,7 +116,7 @@ export function RetryRuleFields({
           <Label className="text-sm">{t(`retryLayer.${layer}.title`)}</Label>
           <span className="text-muted-foreground text-xs">{t(`retryLayer.${layer}.where`)}</span>
         </div>
-        {/* 哪些错误会走到这层，具体到状态码——填了旋钮却看不到效果，多半是错误压根不落在这层。 */}
+        {/* 어떤 에러가 이 계층까지 오는지 상태 코드 단위로 적는다. 설정값을 넣었는데 효과가 없다면, 대개 에러가 애초에 이 계층에 걸리지 않기 때문이다. */}
         <p className="text-muted-foreground text-xs">
           <span className="font-medium text-foreground">{t("retry.triggerLabel")}</span>:{" "}
           {t(`retryLayer.${layer}.trigger`)}
@@ -167,7 +167,7 @@ export function RetryRuleFields({
   );
 }
 
-/** 模型配置抽屉里的三层覆盖（跟着端点走的那三层）。 */
+/** 모델 설정 드로어의 세 계층 덮어쓰기 설정(엔드포인트에 종속된 세 계층). */
 export function ProfileRetryFields({
   value,
   onChange,
@@ -197,7 +197,7 @@ export function ProfileRetryFields({
   );
 }
 
-/** 「重试与退避」tab：五层的全局默认值。 */
+/** 「재시도와 백오프」 탭: 다섯 계층의 전역 기본값. */
 export function RetryPolicyPanel() {
   const t = useTranslations("llmPage");
   const [policy, setPolicy] = React.useState<LLMRetryPolicy>(ZERO_POLICY);
@@ -224,7 +224,7 @@ export function RetryPolicyPanel() {
     if (saving) return;
     setSaving(true);
     try {
-      // 后端会把越界值夹回区间并回传，直接用回传值刷新，所见即所存。
+      // 백엔드가 범위를 벗어난 값을 구간 안으로 잘라서 돌려주므로, 돌려받은 값으로 바로 갱신한다. 보이는 것이 곧 저장되는 것이다.
       const saved = await api.saveLLMRetryPolicy(policy);
       setPolicy({ ...ZERO_POLICY, ...saved });
       toast.success(t("retry.toast.saved"));

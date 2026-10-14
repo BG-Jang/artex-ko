@@ -22,7 +22,7 @@ import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/in
 import type { FindingAssetKind, FindingAssetNode } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-// 图标沿用资产页的类型映射,同一种资产在两处长得一样。
+// 아이콘은 자산 페이지의 유형 매핑을 그대로 써서, 같은 자산은 두 곳에서 같은 모양으로 보인다.
 const KIND_ICON: Record<FindingAssetKind, LucideIcon> = {
   company: BuildingIcon,
   root_domain: GlobeIcon,
@@ -34,12 +34,12 @@ const KIND_ICON: Record<FindingAssetKind, LucideIcon> = {
   none: CircleDashedIcon,
 };
 
-// TreeNode 是节点数组组装出来的树。后端已按「同父下发现多的在前」排好序,
-// 这里只需按数组顺序挂载。
+// TreeNode는 노드 배열로 조립한 트리다. 백엔드가 이미 "같은 부모 아래 취약점이 많은 순"으로 정렬해 내려주므로,
+// 여기서는 배열 순서대로 붙이기만 하면 된다.
 interface TreeNode extends FindingAssetNode {
   children: TreeNode[];
   depth: number;
-  /** 树上真正渲染的文字;完整 label 仍保留在 label 里(悬停提示与面包屑用)。 */
+  /** 트리에 실제로 렌더링되는 텍스트. 전체 label은 그대로 label에 남긴다(호버 툴팁과 breadcrumb에 사용). */
   display: string;
 }
 
@@ -55,8 +55,8 @@ function parseAssetURL(raw: string): URL | null {
   }
 }
 
-// hostOf 取一个节点代表的宿主:URL 取 hostname,「host:port」取 host,其余就是
-// 标签本身(根域名 / 子域名 / IP)。
+// hostOf는 노드를 대표하는 호스트를 구한다: URL은 hostname을, "host:port"는 host를 취하고, 나머지는
+// 레이블 자체(루트 도메인 / 서브도메인 / IP)다.
 function hostOf(label: string): string {
   const url = parseAssetURL(label);
   if (url) return stripBrackets(url.hostname);
@@ -64,25 +64,25 @@ function hostOf(label: string): string {
   return stripBrackets(hostPort ? hostPort[1] : label);
 }
 
-// shortLabel 去掉与父节点重复的前缀。service / endpoint 的 label 是完整 URL,而
-// 宿主域名/IP 上一行已经写过了 —— 深层节点本来就窄,再把 host 重复一遍,真正有
-// 信息量的端口和路径就全被截断掉了。完整值仍在 title 与面包屑里。
+// shortLabel은 부모 노드와 중복되는 접두사를 제거한다. service / endpoint의 label은 전체 URL인데, 그
+// 호스트 도메인/IP는 윗줄에 이미 나와 있다 — 깊은 노드는 원래 좁으므로 host를 한 번 더 반복하면 정말 중요한
+// 포트와 경로가 모두 잘려 버린다. 전체 값은 title과 breadcrumb에 그대로 남아 있다.
 function shortLabel(node: FindingAssetNode, parent?: FindingAssetNode): string {
   if (!parent) return node.label;
 
-  // 子域名挂在根域名下:去掉根域名后缀,只留自己那一段。
+  // 서브도메인은 루트 도메인 아래에 붙으므로, 루트 도메인 접미사를 떼고 자기 구간만 남긴다.
   if (node.kind === "subdomain" && node.label.endsWith(`.${parent.label}`)) {
     return node.label.slice(0, -(parent.label.length + 1)) || node.label;
   }
   if (node.kind !== "service" && node.kind !== "endpoint") return node.label;
 
-  // 父标签正好是自己的前缀(接口挂在同 URL 的服务下、服务挂在同 IP 下):直接砍掉。
+  // 부모 레이블이 정확히 자신의 접두사라면(같은 URL의 서비스 아래 붙은 엔드포인트, 같은 IP 아래 붙은 서비스) 바로 잘라낸다.
   if (node.label.startsWith(parent.label)) {
     return node.label.slice(parent.label.length) || node.label;
   }
 
-  // 否则只有父节点确实就是这个 URL 的宿主时才简写,不然会丢掉辨识信息
-  // (比如服务因为缺子域名资产行而直接挂在根域名下,那就得显示完整 URL)。
+  // 그렇지 않으면 부모 노드가 정말 이 URL의 호스트일 때만 줄여 쓴다. 그러지 않으면 식별 정보가 사라지고
+  // (예: 서브도메인 자산 행이 없어 서비스가 루트 도메인 아래에 바로 붙은 경우에는 전체 URL을 보여 줘야 한다).
   if (hostOf(node.label) !== hostOf(parent.label)) return node.label;
 
   const url = parseAssetURL(node.label);
@@ -103,7 +103,7 @@ export function buildAssetTree(nodes: FindingAssetNode[]): TreeNode[] {
     const current = byKey.get(node.key);
     if (!current) continue;
     const parent = node.parent ? byKey.get(node.parent) : undefined;
-    // 父节点缺失(被截断层级丢掉)时上提为顶层,不让子树整个消失。
+    // 부모 노드가 없으면(잘린 계층에서 빠진 경우) 최상위로 올려, 하위 트리 전체가 사라지지 않게 한다.
     if (parent) {
       parent.children.push(current);
       current.display = shortLabel(node, parent);
@@ -119,8 +119,8 @@ export function buildAssetTree(nodes: FindingAssetNode[]): TreeNode[] {
   return roots;
 }
 
-// assetPathOf 返回从顶层到该节点的路径,用于右侧面包屑。每一级同样只显示相对
-// 上一级的增量(display),完整值留在 label 里。
+// assetPathOf는 최상위에서 해당 노드까지의 경로를 반환하며, 오른쪽 breadcrumb에 쓴다. 각 단계도 마찬가지로 상대적인
+// 증분(display, 바로 윗단계 대비)만 보여 주고, 전체 값은 label에 남긴다.
 export function assetPathOf(nodes: FindingAssetNode[], key: string | null): (FindingAssetNode & { display: string })[] {
   if (!key) return [];
   const byKey = new Map(nodes.map((n) => [n.key, n]));
@@ -135,8 +135,8 @@ export function assetPathOf(nodes: FindingAssetNode[], key: string | null): (Fin
   return path.map((node, index) => ({ ...node, display: shortLabel(node, path[index - 1]) }));
 }
 
-// filterTree 按关键词过滤:命中的节点保留,并保留其整条祖先链(祖先自身可以不命中)。
-// 命中节点的子孙一并保留,便于继续下钻。
+// filterTree는 키워드로 거른다: 일치한 노드는 남기고, 그 조상 체인 전체도 남긴다(조상 자체는 일치하지 않아도 됨).
+// 일치한 노드의 하위 노드도 함께 남겨, 계속 내려가며 볼 수 있게 한다.
 function filterTree(nodes: TreeNode[], keyword: string): TreeNode[] {
   const kw = keyword.trim().toLowerCase();
   if (!kw) return nodes;
@@ -150,7 +150,7 @@ function filterTree(nodes: TreeNode[], keyword: string): TreeNode[] {
   return nodes.map(walk).filter((n): n is TreeNode => n !== null);
 }
 
-// collectKeys 收集一棵(子)树里的全部 key,用于「展开全部匹配项」。
+// collectKeys는 (하위) 트리의 모든 key를 수집하며, "일치 항목 모두 펼치기"에 쓴다.
 function collectKeys(nodes: TreeNode[], out: Set<string> = new Set()): Set<string> {
   for (const node of nodes) {
     out.add(node.key);
@@ -166,9 +166,9 @@ interface AssetTreeProps {
   loading?: boolean;
   truncated?: boolean;
   droppedKinds?: string[];
-  /** 未选中任何资产时右侧展示的发现总数,用于「全部资产」那一行。 */
+  /** 어떤 자산도 선택하지 않았을 때 오른쪽에 보여 줄 취약점 총수. "전체 자산" 행에 쓴다. */
   findingTotal: number;
-  /** 资产视图不轮询,树的计数靠这个按钮或页面内的增删改来刷新。 */
+  /** 자산 보기는 폴링하지 않으므로, 트리 개수는 이 버튼이나 페이지 안의 추가/수정/삭제로 새로고침한다. */
   onRefresh?: () => void;
 }
 
@@ -186,13 +186,13 @@ export function AssetTree({
   const kindLabel = (kind: string) => (t.has(`assetTree.kind.${kind}`) ? t(`assetTree.kind.${kind}`) : kind);
   const [keyword, setKeyword] = React.useState("");
   const [expanded, setExpanded] = React.useState<Set<string>>(() => new Set());
-  // 记住用户手动折叠过的节点,免得「默认展开顶层」在每次刷新后又把它们撑开。
+  // 사용자가 수동으로 접은 노드를 기억해, "기본으로 최상위 펼치기"가 새로고침할 때마다 다시 펼치지 않게 한다.
   const [collapsed, setCollapsed] = React.useState<Set<string>>(() => new Set());
 
   const roots = React.useMemo(() => buildAssetTree(nodes), [nodes]);
   const visible = React.useMemo(() => filterTree(roots, keyword), [roots, keyword]);
 
-  // 搜索时把匹配到的分支全部展开,否则命中项藏在折叠节点里等于没搜。
+  // 검색할 때는 일치한 가지를 모두 펼친다. 그렇지 않으면 일치 항목이 접힌 노드 안에 숨어 검색하지 않은 것과 같다.
   const searching = keyword.trim() !== "";
   const searchKeys = React.useMemo(() => (searching ? collectKeys(visible) : null), [searching, visible]);
 
@@ -200,7 +200,7 @@ export function AssetTree({
     (node: TreeNode) => {
       if (searchKeys) return searchKeys.has(node.key);
       if (expanded.has(node.key)) return true;
-      // 顶层默认展开一层:再深的层级要用户自己点开,免得一次铺开上千行。
+      // 최상위는 기본으로 한 단계만 펼친다. 더 깊은 계층은 사용자가 직접 열게 해, 한 번에 수천 행이 펼쳐지지 않게 한다.
       return node.depth === 0 && !collapsed.has(node.key);
     },
     [collapsed, expanded, searchKeys],

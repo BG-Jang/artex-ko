@@ -10,13 +10,13 @@ import type { Edge, TaskNode } from "@/lib/types";
 export function GraphTab({ taskId }: { taskId: string }) {
   const [nodes, setNodes] = React.useState<TaskNode[]>([]);
   const [edges, setEdges] = React.useState<Edge[]>([]);
-  // 上一次图数据的签名:轮询拿到相同数据时跳过 setState,避免整图无谓重建(拖动时
-  // 才不会被 20s 轮询打断而顿挫)。只取影响渲染的字段。
+  // 이전 그래프 데이터의 시그니처: 폴링이 같은 데이터를 받으면 setState를 건너뛰어, 그래프 전체를 쓸데없이 다시 만들지 않는다(드래그 중에
+  // 20초 폴링에 끊겨 버벅이지 않도록 한다). 렌더링에 영향을 주는 필드만 취한다.
   const sigRef = React.useRef("");
 
   React.useEffect(() => {
     let cancelled = false;
-    sigRef.current = ""; // 换任务:强制下一次刷新
+    sigRef.current = ""; // 작업 전환: 다음 새로고침을 강제한다
     const load = () => {
       api
         .explorationGraph(taskId)
@@ -28,7 +28,7 @@ export function GraphTab({ taskId }: { taskId: string }) {
             ns.map((n) => [n.id, n.type, n.state, n.priority, n.payload]),
             es.map((e) => [e.src, e.dst, e.rel]),
           ]);
-          if (sig === sigRef.current) return; // 无变化 → 不重建
+          if (sig === sigRef.current) return; // 변화 없음 → 다시 만들지 않음
           sigRef.current = sig;
           setNodes(ns);
           setEdges(es);
