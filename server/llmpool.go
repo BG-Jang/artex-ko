@@ -10,11 +10,11 @@ import (
 	"github.com/Autumn-27/norma/llm"
 )
 
-// LLM 轮询(故障转移)的服务端接线。设计见 docs/LLM轮询设计.md：
-//   - 全局激活配置这条路径(agent 未绑定、任务未 pin)才轮询;
-//   - 绑定/pin 的路径默认独占该配置,失败即失败(可由 llm_pool_bind_fallback 打开兜底);
-//   - 链序 = 激活配置 → 其余按 priority DESC,排除 pool_exclude 的;
-//   - 熔断状态进程级共享(s.llmHealth),重建 pool 不清空。
+// LLM 폴링(장애 전환)의 서버 측 연결. 설계는 docs/LLM轮询设计.md 참고:
+//   - 전역으로 활성화된 설정이 이 경로(agent 미바인딩, 태스크 미고정)에 해당할 때만 폴링한다;
+//   - 바인딩/pin 된 경로는 기본적으로 해당 설정을 독점하며, 실패하면 그대로 실패한다(llm_pool_bind_fallback 으로 폴백을 켤 수 있다);
+//   - 체인 순서 = 활성화된 설정 → 나머지는 priority DESC 순, pool_exclude 에 해당하는 것은 제외;
+//   - 서킷 브레이커 상태는 프로세스 단위로 공유되며(s.llmHealth), pool 을 다시 만들어도 비우지 않는다.
 
 // newLLMHealthRegistry builds the process-wide circuit-breaker registry, mirroring
 // state into PG so a cooling-off window survives a restart. Writes are async and
@@ -31,7 +31,7 @@ func newLLMHealthRegistry(pg *db.DB) *llmpool.Registry {
 		}
 		go func() {
 			if err := pg.SaveLLMHealth(h); err != nil {
-				log.Printf("[llmpool] 熔断状态落库失败: %v", err)
+				log.Printf("[llmpool] 서킷 브레이커 상태 DB 저장 실패: %v", err)
 			}
 		}()
 	}
@@ -48,7 +48,7 @@ func newLLMHealthRegistry(pg *db.DB) *llmpool.Registry {
 				st.OpenUntil = *h.OpenUntil
 			}
 			reg.Restore(h.ProfileID, st)
-			log.Printf("[llmpool] 恢复熔断状态: 配置 #%d 冷却至 %s", h.ProfileID, st.OpenUntil.Format(time.RFC3339))
+			log.Printf("[llmpool] 서킷 브레이커 상태 복원: 설정 #%d 쿨다운 종료 %s", h.ProfileID, st.OpenUntil.Format(time.RFC3339))
 		}
 	}
 	return reg
@@ -83,7 +83,7 @@ func (s *Server) poolChain(headID int64, headProv llm.Provider, headCfg agent.Co
 	}
 	profs, err := s.m.pg.PoolProfiles()
 	if err != nil {
-		log.Printf("[llmpool] 读取轮询链失败: %v", err)
+		log.Printf("[llmpool] 폴링 체인 읽기 실패: %v", err)
 		return nil
 	}
 	var head *db.LLMProfile
@@ -136,7 +136,7 @@ func (s *Server) poolForActive(activeID int64, prov llm.Provider, cfg agent.Conf
 	for _, m := range pool.Members() {
 		names = append(names, m.Name+"/"+m.Model)
 	}
-	log.Printf("[llmpool] LLM 轮询已启用，链路(%d): %v", len(names), names)
+	log.Printf("[llmpool] LLM 폴링 활성화, 체인(%d): %v", len(names), names)
 	return pool
 }
 

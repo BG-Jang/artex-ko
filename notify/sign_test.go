@@ -6,13 +6,13 @@ import (
 	"time"
 )
 
-// 签名基准值由 OpenSSL 独立算出，不是用本包自己的实现生成的——
-// 否则只能证明「代码没变」，证明不了「算法对」。
+// 서명 기준 값은 OpenSSL로 독립적으로 계산한 것이며, 이 패키지 자체 구현으로 생성한 것이 아니다.
+// 그렇지 않으면 '코드가 바뀌지 않았다'만 증명할 뿐, '알고리즘이 맞다'는 증명할 수 없다.
 //
 //	TS=1700000000000, SECRET=SECtest123
-//	钉钉: printf '%s\n%s' "$TS" "$SECRET" | openssl dgst -sha256 -hmac "$SECRET" -binary | openssl base64 -A
+//	DingTalk: printf '%s\n%s' "$TS" "$SECRET" | openssl dgst -sha256 -hmac "$SECRET" -binary | openssl base64 -A
 //	      -> w3RMHXzixTMdzr8OHJUmVLS4IoPJVdu+Ut1LE48MePE=
-//	飞书: printf '' | openssl dgst -sha256 -hmac "$(printf '%s\n%s' "$TS" "$SECRET")" -binary | openssl base64 -A
+//	Feishu: printf '' | openssl dgst -sha256 -hmac "$(printf '%s\n%s' "$TS" "$SECRET")" -binary | openssl base64 -A
 //	      -> Hd4xFWQU6R6ad4nzy4ETIznzlqebqH7xcTFVmONTudo=
 const (
 	signTestTSMillis = int64(1700000000000)
@@ -37,7 +37,7 @@ func TestDingTalkSignMatchesReference(t *testing.T) {
 	if q.Get("timestamp") != "1700000000000" {
 		t.Errorf("时间戳应为毫秒且原样带上，得到 %q", q.Get("timestamp"))
 	}
-	// 原有 query 参数（access_token）不能被签名覆盖掉。
+	// 기존 query 파라미터(access_token)는 서명에 의해 덮어써지면 안 된다.
 	if q.Get("access_token") != "tok" {
 		t.Errorf("原有 query 参数丢失，得到 %q", q.Get("access_token"))
 	}
@@ -50,9 +50,9 @@ func TestFeishuSignMatchesReference(t *testing.T) {
 	}
 }
 
-// TestSignAlgorithmsDiffer 锁住两家的算法差异。它们刚好互为对方的参数顺序
-// （钉钉 key=secret，飞书 key=待签串），照另一家抄必然校验失败，
-// 这条用例确保将来重构不会把两者合并成同一个函数。
+// TestSignAlgorithmsDiffer는 두 플랫폼의 알고리즘 차이를 고정한다. 이들은 서로 파라미터 순서가 반대다
+// (DingTalk는 key=secret, Feishu는 key=서명 대상 문자열). 한쪽을 그대로 베끼면 반드시 검증에 실패하며,
+// 이 케이스는 향후 리팩터링에서 두 함수가 하나로 합쳐지지 않도록 보장한다.
 func TestSignAlgorithmsDiffer(t *testing.T) {
 	ts := "1700000000000"
 	dingURL, err := dingTalkSignedURL("https://example.com/hook", signTestSecret, time.UnixMilli(signTestTSMillis))
@@ -66,7 +66,7 @@ func TestSignAlgorithmsDiffer(t *testing.T) {
 }
 
 func TestDingTalkNoSecretLeavesURLUntouched(t *testing.T) {
-	// 未开启加签的机器人：不得凭空添加 timestamp/sign 参数。
+	// 서명을 켜지 않은 봇: timestamp/sign 파라미터를 임의로 추가하면 안 된다.
 	const hook = "https://oapi.dingtalk.com/robot/send?access_token=tok"
 	got, err := dingTalkSignedURL(hook, "", time.UnixMilli(signTestTSMillis))
 	if err != nil {
@@ -84,7 +84,7 @@ func TestValidateHTTPURL(t *testing.T) {
 			t.Errorf("%q 应被接受: %v", s, err)
 		}
 	}
-	// file:// 之类不应放行——http.Client 对它们的处理超出预期范围。
+	// file:// 같은 스킴은 허용하면 안 된다. http.Client가 이를 처리하는 방식은 예상 범위를 벗어난다.
 	bad := []string{"", "file:///etc/passwd", "ftp://example.com", "https://", "gopher://x"}
 	for _, s := range bad {
 		if err := validateHTTPURL(s); err == nil {

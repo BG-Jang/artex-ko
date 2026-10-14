@@ -8,7 +8,7 @@ import (
 	"github.com/Autumn-27/norma/llm"
 )
 
-// 空转回合(仅思考、无正文无工具)的识别与续跑，见 steerHooks.Stop。
+// 빈 턴(생각만 있고 본문도 도구 호출도 없는 턴)의 식별과 계속 진행 처리는 steerHooks.Stop 을 참고한다.
 
 func assistantThinking(text string) llm.Message {
 	return llm.Message{Role: llm.RoleAssistant, Content: []llm.ContentBlock{
@@ -37,7 +37,7 @@ func TestIsThinkingOnlyTurn(t *testing.T) {
 			Content: []llm.ContentBlock{{Type: llm.BlockThinking, Thinking: "x"}, llm.TextBlock("  \n ")},
 		}}, true},
 		{"完全空的 assistant 回合", []llm.Message{{Role: llm.RoleAssistant}}, true},
-		// 工具结果是 user 角色，判定必须回溯到它前面那条 assistant，而不是就近误判。
+		// 도구 결과는 user 역할이므로, 판정은 바로 앞의 assistant 메시지까지 거슬러 올라가야 하며, 가까운 메시지만 보고 잘못 판단해서는 안 된다.
 		{"最后一条是工具结果", []llm.Message{toolUse, {
 			Role:    llm.RoleUser,
 			Content: []llm.ContentBlock{{Type: llm.BlockToolResult, ToolUseID: "t1"}},
@@ -54,7 +54,7 @@ func TestIsThinkingOnlyTurn(t *testing.T) {
 	}
 }
 
-// fakeHooks 是一个可编程的 inner HookRunner，用来验证 steerHooks 对 inner 决定的尊重。
+// fakeHooks 는 동작을 프로그래밍할 수 있는 inner HookRunner 이며, steerHooks 가 inner 의 결정을 존중하는지 검증하는 데 쓴다.
 type fakeHooks struct {
 	prevent  bool
 	blocking []string
@@ -98,7 +98,7 @@ func TestSteerHooksStopNudgesEmptyTurn(t *testing.T) {
 	})
 
 	t.Run("达到上限后放行收场", func(t *testing.T) {
-		const limit = 5 // 用户把「空响应重试次数」配成 5
+		const limit = 5 // 사용자가 「빈 응답 재시도 횟수」를 5 로 설정한 경우
 		h := steerHooks{nudges: &atomic.Int64{}, limit: limit}
 		for i := 1; i <= limit; i++ {
 			if _, blocking, _ := h.Stop(context.Background(), empty); len(blocking) != 1 {
@@ -110,7 +110,7 @@ func TestSteerHooksStopNudgesEmptyTurn(t *testing.T) {
 		}
 	})
 
-	// 「空响应重试次数」配 -1 = 关掉这层，emptyTurnNudgeLimit 解析成 0。
+	// 「빈 응답 재시도 횟수」를 -1 로 설정하면 이 계층이 꺼지고, emptyTurnNudgeLimit 은 0 으로 해석된다.
 	t.Run("配置关闭时不介入", func(t *testing.T) {
 		h := steerHooks{nudges: &atomic.Int64{}, limit: 0}
 		if _, blocking, _ := h.Stop(context.Background(), empty); blocking != nil {
@@ -138,7 +138,7 @@ func TestSteerHooksStopNudgesEmptyTurn(t *testing.T) {
 	})
 
 	t.Run("未装计数器时行为不变", func(t *testing.T) {
-		h := steerHooks{limit: defaultEmptyTurnNudges} // 例如未来其他调用点忘了传 nudges
+		h := steerHooks{limit: defaultEmptyTurnNudges} // 예: 나중에 다른 호출 지점이 nudges 를 넘기는 것을 잊은 경우
 		if _, blocking, _ := h.Stop(context.Background(), empty); blocking != nil {
 			t.Fatalf("无计数器时不应注入: %v", blocking)
 		}

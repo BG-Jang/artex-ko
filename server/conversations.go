@@ -28,7 +28,7 @@ const (
 // 대화(채팅) 엔드포인트가 HTTP 응답으로 돌려주는 사용자 노출 문구다. 한국어 UI 에서
 // 요청이 실패하면 이 문구가 그대로 토스트로 뜨므로 한국어로 둔다. 요청 필드명
 // (agent_key·title·pinned·ids·id)·식별자(LLM·API Key·token)는 사용자가 요청을 고치는 데
-// 쓰는 값이라 원문 그대로 둔다. 用語: 配置→설정(B4c-5), agent→에이전트. %d 가 든 상수는
+// 쓰는 값이라 원문 그대로 둔다. 용어: 配置→설정(B4c-5), agent→에이전트. %d 가 든 상수는
 // fmt.Sprintf 형식 문자열이다. 기본 대화 제목·센티넬은 아래 convDefaultTitle·
 // convAttachmentTitle 로 분리했고(F8), 재검증 사유·트랜스크립트 오류 문구는 아래
 // convRetest* 상수·transcriptErrorSummary 로 분리했다(F9). 트리거 메시지 골격은 아직
@@ -442,7 +442,7 @@ func (s *Server) pgSendConversationMessage(w http.ResponseWriter, r *http.Reques
 	}
 	var req struct {
 		Message     string           `json:"message"`
-		Attachments []chatAttachment `json:"attachments,omitempty"` // 方式1 上传的文件(路径相对会话工作目录)
+		Attachments []chatAttachment `json:"attachments,omitempty"` // 방식1 업로드 파일(경로는 세션 작업 디렉터리 기준)
 	}
 	if err := decode(r, &req); err != nil {
 		writeErr(w, 400, err.Error())
@@ -633,16 +633,16 @@ func (s *Server) runConversationTurn(ctx context.Context, cancel context.CancelC
 	_ = pg.TouchConversation(c.ID)
 }
 
-// triggerBehavior is an agent's cached P3 trigger post-processing策略 (see the
+// triggerBehavior is an agent's cached P3 trigger post-processing정책 (see the
 // agents table trigger_* columns). Read once per fire in StartTriggeredRun so the
 // pump never touches the DB while holding queueMu.
 type triggerBehavior struct {
 	runMode     string // serial | parallel
-	mergeMode   string // by_task | all | none (serial 用;parallel 忽略,每条各自一个会话)
-	maxParallel int    // parallel 用的每 agent 并发上限;<=0=不限
+	mergeMode   string // by_task | all | none (serial 용; parallel 은 무시, 각 항목이 개별 세션을 가짐)
+	maxParallel int    // parallel 용 에이전트별 동시 실행 상한; <=0=무제한
 }
 
-// readTriggerBehavior loads an agent's策略, falling back to safe defaults
+// readTriggerBehavior loads an agent's정책, falling back to safe defaults
 // (serial / all / 5) on any error or unknown enum value.
 func (s *Server) readTriggerBehavior(agentKey string) triggerBehavior {
 	b := triggerBehavior{runMode: "serial", mergeMode: "all", maxParallel: 5}
@@ -665,7 +665,7 @@ func (s *Server) readTriggerBehavior(agentKey string) triggerBehavior {
 }
 
 // StartTriggeredRun enqueues a P3 trigger fire for agentKey and pumps the queue. The
-// agent's策略 decides concurrency + merge: serial → run one at a time (optionally
+// agent's정책 decides concurrency + merge: serial → run one at a time (optionally
 // merging by task / all / none); parallel → run each fire in its own concurrent
 // conversation up to trigger_max_parallel. Distinct agents always run concurrently.
 func (s *Server) StartTriggeredRun(agentKey, title, message string, taskID int64, mergeable bool, taskDesc, taskGoal string) {

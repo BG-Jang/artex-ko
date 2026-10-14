@@ -12,28 +12,28 @@ import (
 	"time"
 )
 
-// webhookChannel 是通用 Webhook 适配器：用户自定 URL、方法、请求头与 JSON 模板。
-// 它的存在让本功能不必为 Slack / Mattermost / Discord / 自建系统各写一个实现——
-// 那些平台都能被一个可配模板覆盖。
+// webhookChannel은 범용 Webhook 어댑터이다. 사용자가 URL, 메서드, 요청 헤더, JSON 템플릿을 직접 설정한다.
+// 이 어댑터 덕분에 Slack / Mattermost / Discord / 자체 구축 시스템마다 구현을 따로 쓸 필요가 없다.
+// 이 플랫폼들은 모두 설정 가능한 템플릿 하나로 감당할 수 있다.
 type webhookChannel struct{}
 
 func (webhookChannel) Kind() string { return KindWebhook }
 
-// 通用 Webhook 没有官方限制，返回 0 表示默认不限流，由使用者按对端能力自定。
+// 범용 Webhook에는 공식 제한이 없다. 0을 반환하여 기본적으로 제한하지 않으며, 상대의 능력에 맞게 사용자가 직접 정한다.
 func (webhookChannel) DefaultRatePerMin() int { return 0 }
 
-// 掩码 url 与 headers：目标地址本身常带 token，自定义头里通常放着鉴权凭据，
-// 两者都会出现在接口回显里，所以都要挡。
-// 代价是编辑时若想改动其中一个头，需要重新填整组头（掩码值会被解释为「保持原值」）——
-// 这个取舍是刻意的：宁可多填一次，也不把凭据回显到浏览器。
+// url과 headers를 마스킹한다. 전달 주소 자체에 토큰이 들어 있는 경우가 많고, 사용자 정의 헤더에는 보통 인증 자격 증명이 들어 있다.
+// 둘 다 API 응답에 나타날 수 있으므로 모두 막아야 한다.
+// 대가로, 편집 시 그중 한 헤더를 바꾸려면 헤더 묶음 전체를 다시 입력해야 한다(마스킹 값은 「원래 값 유지」로 해석된다).
+// 이 절충은 의도적이다. 여러 번 입력하는 편이 낫고, 자격 증명을 브라우저에 되돌려주지 않는다.
 func (webhookChannel) SecretKeys() []string { return []string{"url", "headers"} }
 
-// 目的地是 url。改 url 时必须重新表态 headers —— 否则原始 Authorization 头
-// 会被原样发到新地址，这正是掩码绕过的主路径。
+// 목적지는 url이다. url을 바꿀 때는 headers에 대해 반드시 다시 입장을 밝혀야 한다. 그렇지 않으면 원래의 Authorization 헤더가
+// 새 주소로 그대로 전송되며, 이것이 바로 마스킹을 우회하는 주된 경로이다.
 func (webhookChannel) DestinationKeys() []string { return []string{"url"} }
 
-// webhookDefaultTemplate 是未填模板时的兜底请求体：一个直白的 JSON 结构，
-// 覆盖绝大多数「收一条 JSON 入库」的自建接收端。
+// webhookDefaultTemplate은 템플릿을 입력하지 않았을 때 쓰는 기본 요청 본문이다. 단순한 JSON 구조이며,
+// 「JSON을 받아 저장하는」 대부분의 자체 구축 수신 측을 감당할 수 있다.
 const webhookDefaultTemplate = `{
   "title": {{json .Title}},
   "batch": {{.Batch}},
@@ -54,14 +54,14 @@ const webhookDefaultTemplate = `{
   ]
 }`
 
-// webhookTemplateData 是暴露给用户模板的上下文。
+// webhookTemplateData는 사용자 템플릿에 노출되는 컨텍스트이다.
 type webhookTemplateData struct {
 	Title   string
 	Batch   bool
 	Count   int
 	Items   []webhookItem
 	HomeURL string
-	// SentAt 是本次投递时间（RFC3339），供接收端记录。
+	// SentAt은 이번 전달 시각(RFC3339)이며, 수신 측이 기록하는 데 쓴다.
 	SentAt string
 }
 
@@ -76,7 +76,7 @@ type webhookItem struct {
 	DetailURL     string
 	FromStatus    string
 	ToStatus      string
-	// StatusLabel 是状态变更的可读描述，如「待处理 → 已修复」；非状态变更时为空。
+	// StatusLabel은 상태 변경의 읽기 쉬운 설명이다(예: 「대기 → 수정됨」). 상태 변경이 아니면 비어 있다.
 	StatusLabel string
 }
 
@@ -108,16 +108,16 @@ func (c webhookChannel) Send(ctx context.Context, cfg map[string]any, m Message)
 		method = http.MethodPost
 	}
 
-	// GET 不带请求体：把内容塞进 query 超出模板能力范围，也不符合 GET 语义，
-	// 所以 GET 只适合「命中即触发钩子」这类接收端。
+	// GET은 요청 본문을 싣지 않는다. 내용을 query에 넣는 것은 템플릿의 능력 범위를 벗어나고 GET의 의미에도 맞지 않으며,
+	// 그래서 GET은 「호출되면 훅을 트리거하는」 종류의 수신 측에만 적합하다.
 	var payload any
 	if method != http.MethodGet {
 		body, err := renderWebhookBody(cfgString(cfg, "body_template"), m)
 		if err != nil {
 			return 0, Permanent(err)
 		}
-		// 模板渲染出的是字符串形式的 JSON，这里转成 json.RawMessage 原样发出，
-		// 避免二次转义把用户精心构造的结构套进一个 JSON 字符串里。
+		// 템플릿이 렌더링한 결과는 문자열 형태의 JSON이며, 여기서 json.RawMessage로 바꿔 그대로 보낸다.
+		// 이중 이스케이프를 피하기 위해서다. 그렇지 않으면 사용자가 정성껏 만든 구조가 JSON 문자열 안에 감싸여 버린다.
 		if !json.Valid([]byte(body)) {
 			return 0, Permanent(errors.New("요청 본문 템플릿의 렌더링 결과가 올바른 JSON이 아닙니다"))
 		}
@@ -126,7 +126,7 @@ func (c webhookChannel) Send(ctx context.Context, cfg map[string]any, m Message)
 
 	headers := cfgMap(cfg, "headers")
 	if ct := cfgString(cfg, "content_type"); ct != "" {
-		// 允许覆盖，但放在 headers 之后应用，保证显式配置优先。
+		// 덮어쓰기는 허용하되, headers 이후에 적용하여 명시적 설정이 우선하도록 보장한다.
 		if headers == nil {
 			headers = map[string]string{}
 		}
@@ -135,12 +135,12 @@ func (c webhookChannel) Send(ctx context.Context, cfg map[string]any, m Message)
 	if _, err := doJSON(ctx, method, cfgString(cfg, "url"), headers, payload); err != nil {
 		return 0, err
 	}
-	// 通用 Webhook 不截断正文（接收端是用户自己的服务，体积由 body_template 决定），
-	// 因此整批都算送达。
+	// 범용 Webhook은 본문을 자르지 않는다(수신 측은 사용자 자신의 서비스이며, 크기는 body_template이 결정한다).
+	// 따라서 배치 전체를 전달 완료로 센다.
 	return len(m.Items), nil
 }
 
-// renderWebhookBody 用用户模板（或默认模板）渲染请求体。
+// renderWebhookBody는 사용자 템플릿(또는 기본 템플릿)으로 요청 본문을 렌더링한다.
 func renderWebhookBody(tpl string, m Message) (string, error) {
 	if strings.TrimSpace(tpl) == "" {
 		tpl = webhookDefaultTemplate
@@ -156,21 +156,21 @@ func renderWebhookBody(tpl string, m Message) (string, error) {
 	return buf.String(), nil
 }
 
-// parseWebhookTemplate 解析模板。
+// parseWebhookTemplate는 템플릿을 파싱한다.
 //
-// missingkey=zero 让缺失的 map 键渲染成零值而不是报错——但本文件的上下文是结构体，
-// 主要作用是让 .Items 为空时 range 不出错。真正需要防的是 .Items 为 nil。
+// missingkey=zero는 없는 map 키를 오류 대신 0값으로 렌더링하게 한다. 다만 이 파일의 컨텍스트는 구조체이므로,
+// 주된 역할은 .Items가 비어 있을 때 range가 오류를 내지 않게 하는 것이다. 실제로 막아야 하는 것은 .Items가 nil인 경우이다.
 func parseWebhookTemplate(tpl string) (*template.Template, error) {
 	return template.New("body").Funcs(webhookTemplateFuncs).Option("missingkey=zero").Parse(tpl)
 }
 
-// webhookTemplateFuncs 是暴露给模板的辅助函数。
+// webhookTemplateFuncs는 템플릿에 노출되는 도우미 함수이다.
 var webhookTemplateFuncs = template.FuncMap{
-	// json 把任意值序列化成 JSON。
+	// json은 임의의 값을 JSON으로 직렬화한다.
 	//
-	// 这个函数不是锦上添花而是必需的：省去它，用户只能写 {{.Title}} 直接插值，
-	// 而漏洞标题里只要有引号或换行，整段请求体就不再是合法 JSON——接收端会
-	// 拒收，且报错信息指向「JSON 解析失败」，完全联想不到是标题里有个引号。
+	// 이 함수는 있으면 좋은 정도가 아니라 필수이다. 이것이 없으면 사용자는 {{.Title}}을 그대로 삽입할 수밖에 없고,
+	// 취약점 제목에 따옴표나 줄바꿈이 하나만 있어도 요청 본문 전체가 올바른 JSON이 아니게 된다. 수신 측은 이를 거부하며,
+	// 오류 메시지는 「JSON 파싱 실패」만 가리키므로 제목 안의 따옴표를 떠올리기 어렵다.
 	"json": func(v any) (string, error) {
 		raw, err := json.Marshal(v)
 		if err != nil {
@@ -178,7 +178,7 @@ var webhookTemplateFuncs = template.FuncMap{
 		}
 		return string(raw), nil
 	},
-	// jsons 用于把 JSON 片段嵌进另一段 JSON 字符串值内部（做一层字符串转义）。
+	// jsons는 JSON 조각을 다른 JSON 문자열 값 안에 넣을 때 쓴다(문자열 이스케이프를 한 번 더 적용한다).
 	"jsons": func(v any) (string, error) {
 		raw, err := json.Marshal(v)
 		if err != nil {
@@ -188,7 +188,7 @@ var webhookTemplateFuncs = template.FuncMap{
 		if err != nil {
 			return "", err
 		}
-		// 去掉外层引号：调用方自己决定要不要加引号。
+		// 바깥쪽 따옴표는 제거한다. 따옴표를 붙일지는 호출자가 직접 정한다.
 		return string(quoted[1 : len(quoted)-1]), nil
 	},
 }

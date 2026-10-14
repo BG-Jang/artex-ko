@@ -15,10 +15,10 @@ import (
 // maxChatUpload caps a single chat-attachment upload request (memory + spill).
 const maxChatUpload = 128 << 20 // 128 MiB
 
-// chatUpload 의 사용자 노출 에러 응답(한국어). writeErr 로 그대로 UI 에 노출된다. 用語:
+// chatUpload 의 사용자 노출 에러 응답(한국어). writeErr 로 그대로 UI 에 노출된다. 용어:
 // 附件→첨부 파일, scope/id/file 은 요청 필드명이라 원문 보존. scope 검증은 intercept.go 의
-// "값은 … 중 하나여야 합니다" 패턴, 作业 삭제 문구는 goals_api.go 와 같은 문형, "잘못된 id"
-// 는 workspace.go errWsIllegalPath("잘못된 경로입니다")와 같은 꼴이다. ...失败 세 종류는
+// "값은 … 중 하나여야 합니다" 패턴, 작업 삭제 문구는 goals_api.go 와 같은 문형, "잘못된 id"
+// 는 workspace.go errWsIllegalPath("잘못된 경로입니다")와 같은 꼴이다. ...실패 세 종류는
 // task_archives.go:229 선례처럼 접두 상수 + err.Error() 로 이어 붙인다.
 const (
 	errChatUploadScopeInvalid = "scope 값은 task, session, staging 중 하나여야 합니다"
@@ -41,8 +41,8 @@ type chatAttachment struct {
 	Name string `json:"name"`
 	Path string `json:"path"`
 	Size int64  `json:"size"`
-	// Abs 是落盘的绝对路径(m.dir 已是绝对)。建任务前暂存(scope=staging)时前端要用它把
-	// 提示词写进描述;task/session 走 composeAgentMessage 在后端拼路径,不依赖此字段。
+	// Abs 는 디스크에 기록된 절대 경로다(m.dir 은 이미 절대). 작업 생성 전 스테이징(scope=staging) 시 프론트엔드가 이 값으로
+	// 프롬프트를 설명에 써 넣는다. task/session 은 composeAgentMessage 에서 백엔드가 경로를 조립하므로 이 필드에 의존하지 않는다.
 	Abs string `json:"abs,omitempty"`
 }
 
@@ -56,8 +56,8 @@ type chatAttachment struct {
 //
 //	scope=task    → <workDir>/tasks/<id>/uploads/
 //	scope=session → <workDir>/sessions/<id>/uploads/
-//	scope=staging → <workDir>/drafts/<id>/uploads/   (建任务前暂存:任务尚无 ID,
-//	                文件先落这里,前端按返回的 abs 绝对路径写进任务描述)
+//	scope=staging → <workDir>/drafts/<id>/uploads/   (작업 생성 전 스테이징: 작업 ID 아직 없음,
+//	                파일을 먼저 여기에 기록하고, 프론트엔드가 반환된 abs 절대 경로를 작업 설명에 써 넣는다)
 func (s *Server) chatUpload(w http.ResponseWriter, r *http.Request) {
 	var sub string
 	taskScoped := false

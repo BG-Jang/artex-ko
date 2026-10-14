@@ -5,11 +5,11 @@ import (
 	"strings"
 )
 
-// 本文件渲染邮件的 HTML 正文。刻意用内联样式 + 简单表格布局而不是现代 CSS：
-// 邮件客户端（尤其 Outlook 与国内企业邮箱）对 <style> 块和 flex/grid 的支持
-// 差异极大，内联样式是唯一在各家都能正确显示的写法。
+// 이 파일은 이메일 HTML 본문을 렌더링한다. 최신 CSS 대신 인라인 스타일과 단순한 표 레이아웃을 일부러 쓴다.
+// 이메일 클라이언트(특히 Outlook과 국내 기업 메일)는 <style> 블록과 flex/grid 지원 차이가 매우 커서,
+// 인라인 스타일이 모든 곳에서 올바르게 표시되는 유일한 방법이기 때문이다.
 
-// htmlSeverityColor 返回级别对应的强调色，用于左侧色条与标题。
+// htmlSeverityColor는 심각도에 해당하는 강조 색을 반환한다. 왼쪽 색 막대와 제목에 쓰인다.
 func htmlSeverityColor(severity string) string {
 	switch severity {
 	case "critical":
@@ -25,12 +25,12 @@ func htmlSeverityColor(severity string) string {
 	}
 }
 
-// htmlTitle 返回邮件主题。
+// htmlTitle은 이메일 제목을 반환한다.
 func htmlTitle(m Message) string {
 	return markdownTitle(m)
 }
 
-// htmlBody 渲染邮件正文 HTML。maxRunes<=0 表示不截断。
+// htmlBody는 이메일 본문 HTML을 렌더링한다. maxRunes<=0이면 자르지 않는다.
 func htmlBody(m Message, maxRunes int) string {
 	var b strings.Builder
 	b.WriteString(`<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;font-size:14px;color:#262626;line-height:1.6;">`)
@@ -49,7 +49,7 @@ func htmlBody(m Message, maxRunes int) string {
 	return TruncateHTML(b.String(), maxRunes)
 }
 
-// htmlBatchIntro 渲染汇总邮件开头：条数与级别分布。
+// htmlBatchIntro는 요약 이메일의 머리 부분을 렌더링한다. 건수와 심각도 분포를 보여 준다.
 func htmlBatchIntro(m Message) string {
 	var b strings.Builder
 	if m.WindowMinutes > 0 {
@@ -74,8 +74,8 @@ func htmlBatchIntro(m Message) string {
 	return b.String()
 }
 
-// htmlItem 渲染单个漏洞。full=true 时含摘要与回链（单条推送），
-// false 时压缩成一行（汇总列表）。
+// htmlItem은 취약점 항목 하나를 렌더링한다. full=true이면 요약과 상세 링크를 포함하고(단건 푸시),
+// false이면 한 줄로 압축한다(요약 목록).
 func htmlItem(it Item, full bool) string {
 	color := htmlSeverityColor(it.Severity)
 	var b strings.Builder
@@ -122,8 +122,8 @@ func htmlItem(it Item, full bool) string {
 	return b.String()
 }
 
-// htmlEscape 转义 HTML 文本内容。漏洞标题与摘要来自被测目标与模型输出，
-// 是不可信内容——不转义就等于允许把任意 HTML（含外链图片）注入到邮件里。
+// htmlEscape는 HTML 텍스트 내용을 이스케이프한다. 취약점 제목과 요약은 테스트 대상과 모델 출력에서 온 신뢰할 수 없는 내용이다.
+// 이스케이프하지 않으면 임의의 HTML(외부 링크 이미지 포함)을 이메일에 주입하는 것을 허용하는 셈이다.
 func htmlEscape(s string) string {
 	s = strings.ReplaceAll(s, "&", "&amp;")
 	s = strings.ReplaceAll(s, "<", "&lt;")
@@ -131,8 +131,8 @@ func htmlEscape(s string) string {
 	return s
 }
 
-// htmlEscapeAttr 转义 HTML 属性值（在文本转义之外额外处理引号，
-// 防止 URL 里的引号提前闭合 href 属性）。
+// htmlEscapeAttr는 HTML 속성 값을 이스케이프한다. 텍스트 이스케이프에 더해 따옴표를 추가로 처리하여,
+// URL 안의 따옴표가 href 속성을 일찍 닫지 못하도록 막는다.
 func htmlEscapeAttr(s string) string {
 	s = htmlEscape(s)
 	s = strings.ReplaceAll(s, "\"", "&quot;")
