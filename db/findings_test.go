@@ -10,8 +10,7 @@ import (
 	"time"
 )
 
-// TestDeleteFinding verifies删除漏洞 removes both the findings row and its
-// originating exploration node (kind='finding').
+// TestDeleteFinding은 취약점 삭제가 findings 행과 원래 탐색 노드(kind='finding')를 모두 제거하는지 검증한다.
 func TestDeleteFinding(t *testing.T) {
 	d, err := Open(testDSN(t))
 	if err != nil {
