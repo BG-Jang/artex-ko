@@ -1,0 +1,52 @@
+# syntax=docker/dockerfile:1
+#
+# 소스에서 한 번에 빌드하는 멀티스테이지 이미지.
+# 운영용 Dockerfile 은 "실행 전용"(미리 컴파일한 dist/<arch>/artex 만 복사)이라 로컬
+# 소스 변경이 반영되지 않는다. 이 파일은 호스트에 Go·Node 를 설치하지 않고도
+# Docker 안에서 프런트엔드(Next 정적 내보내기)와 Go 바이너리(embedui)를 모두 빌드한다.
+#
+# 사용법(생산 compose 와 함께):
+#   docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+#
+# 최종 런타임 계층은 운영 Dockerfile 과 동일한 베이스·상용 도구를 쓴다.
+
+# 1) 프런트엔드 정적 내보내기(web/out)
+FROM node:20-bookworm AS web
+WORKDIR /src/web
+COPY web/package.json web/package-lock.json ./
+RUN npm ci
+COPY web/ ./
+RUN npm run build:static
+# 산출물: /src/web/out
+
+# 2) Go 바이너리(프런트엔드 임베드)
+FROM golang:1.26-bookworm AS build
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+# 정적 내보내기 결과를 embed 대상 경로(server/webui/dist)로 복사한 뒤 embedui 태그로 빌드
+COPY --from=web /src/web/out ./server/webui/dist
+RUN CGO_ENABLED=0 go build -tags embedui -o /out/artex ./cmd/artex
+
+# 3) 런타임 이미지(운영 Dockerfile 과 동일한 상용 도구 묶음)
+FROM python:3.12-slim-bookworm
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      ca-certificates ripgrep curl wget vim git jq unzip \
+      dnsutils iputils-ping netcat-openbsd inetutils-telnet whois nmap \
+    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && rm -rf /var/lib/apt/lists/*
+RUN npm install -g @playwright/mcp@latest @playwright/cli@latest playwright@latest \
+    && playwright-cli --help \
+    && playwright install --with-deps chromium \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+COPY --from=build /out/artex /app/artex
+COPY start.sh /app/start.sh
+RUN chmod +x /app/artex /app/start.sh
+COPY skills/ /app/skills/
+VOLUME ["/app/data"]
+EXPOSE 8787 8788
+ENTRYPOINT ["/app/start.sh"]
+CMD ["-addr", ":8787", "-proxy", ":8788"]
