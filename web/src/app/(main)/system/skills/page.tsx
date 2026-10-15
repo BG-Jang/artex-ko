@@ -37,6 +37,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { useAgentLabels } from "@/lib/agent-i18n";
 import { ApiError, api } from "@/lib/api";
 import type { Agent, MCPServer, MissingSkill, SkillCall, SkillItem } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -302,6 +303,7 @@ function SkillsOverview({
 // ── Page ──────────────────────────────────────────────────────────────────
 export default function SkillsPage() {
   const t = useTranslations("skillsPage");
+  const labels = useAgentLabels();
   const [skills, setSkills] = React.useState<SkillItem[]>([]);
   const [agents, setAgents] = React.useState<Agent[]>([]);
   const [selected, setSelected] = React.useState<Selected | null>(null);
@@ -1129,9 +1131,9 @@ export default function SkillsPage() {
                         <label key={a.key} className="flex cursor-pointer items-center gap-2 text-sm">
                           <Checkbox
                             checked={(visibility[selectedSkill.name] ?? []).includes(a.id)}
-                            onCheckedChange={() => toggleVisibility(selectedSkill.name, a.id, a.name)}
+                            onCheckedChange={() => toggleVisibility(selectedSkill.name, a.id, labels.name(a))}
                           />
-                          {a.name}
+                          {labels.name(a)}
                         </label>
                       ))}
                       {agents.length === 0 && <span className="text-xs text-muted-foreground">{t("noAgents")}</span>}
@@ -1332,7 +1334,7 @@ export default function SkillsPage() {
                           setNewVisibility((cur) => (on ? [...cur, a.id] : cur.filter((id) => id !== a.id)))
                         }
                       />
-                      {a.name}
+                      {labels.name(a)}
                     </label>
                   ))}
                 </div>
