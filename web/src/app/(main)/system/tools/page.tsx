@@ -18,7 +18,7 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import { useAgentLabels } from "@/lib/agent-i18n";
+import { useAgentLabels, useAgentNameByKey } from "@/lib/agent-i18n";
 import { api } from "@/lib/api";
 import type { Agent, Tool } from "@/lib/types";
 
@@ -295,6 +295,7 @@ function ToolEditor({
 // ToolGridCard is one clickable tile in the catalog grid.
 function ToolGridCard({ tool, onClick }: { tool: Tool; onClick: () => void }) {
   const t = useTranslations("toolsPage");
+  const agentName = useAgentNameByKey();
   return (
     <button
       type="button"
@@ -335,7 +336,7 @@ function ToolGridCard({ tool, onClick }: { tool: Tool; onClick: () => void }) {
         {tool.agents.length === 0 && <span className="text-muted-foreground text-[10px]">{t("noBoundAgents")}</span>}
         {tool.agents.map((a) => (
           <Badge key={a} variant="outline" className="px-1.5 py-0 text-[10px]">
-            {a}
+            {agentName(a)}
           </Badge>
         ))}
       </div>
