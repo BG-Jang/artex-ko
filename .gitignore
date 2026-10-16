@@ -31,9 +31,9 @@ Thumbs.db
 # claude code local state
 .claude/
 
-# 内嵌前端的单二进制产物
+# 프런트엔드를 내장한 단일 바이너리 산출물
 /artex
-# 一键更新在可执行文件旁留下的中间产物（暂存件 / 备份 / 失败版本 / 升级标记）
+# 원클릭 업데이트가 실행 파일 옆에 남기는 중간 산출물(스테이징 / 백업 / 실패 버전 / 업그레이드 마커)
 /artex.new
 /artex.new.sha256
 /artex.old
@@ -42,16 +42,16 @@ Thumbs.db
 /server/webui/dist/
 /dist/
 
-# JWT 签名密钥（运行时生成，存项目根，绝不提交）
+# JWT 서명 키(런타임에 생성, 프로젝트 루트에 저장, 절대 커밋 금지)
 /jwt.key
 
-# Docker 部署生成的本地环境（含密码/密钥，不提交）
+# Docker 배포로 생성되는 로컬 환경(비밀번호/키 포함, 커밋 금지)
 .env
 
-# 调度器运行/模拟产生的事件日志（测试产物，不提交）
+# 스케줄러 실행/시뮬레이션으로 생기는 이벤트 로그(테스트 산출물, 커밋 금지)
 *-events.csv
 
-# bench 基准测试相关（本地产物，不提交）
+# bench 벤치마크 관련(로컬 산출물, 커밋 금지)
 /bench/
 /Dockerfile.bench
 /Dockerfile.bench.v2

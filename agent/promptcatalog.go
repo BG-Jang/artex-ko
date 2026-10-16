@@ -1,11 +1,13 @@
 package agent
 
-// 本文件把内置 agent 的「默认提示词正文」(段 [A]) 变成可枚举、可被服务端幂等
-// 播种进 agent_prompts 表的目录 —— 镜像 toolcatalog.go 的 BuiltinToolSeeds()。
+// 이 파일은 내장 agent 의 「기본 프롬프트 본문」(段 [A]) 을 열거 가능하고, 서버가
+// 멱등하게 agent_prompts 테이블에 시드할 수 있는 카탈로그로 만든다 —— toolcatalog.go 의
+// BuiltinToolSeeds() 를 본뜬 구조다.
 //
-// 只包含【可编辑正文】：段 [B] trafficTool 与段 [C] 中间产物输出规约 是代码固定
-// 注入(见 worker.go 的 workerTrafficBlock/artifactSpec)，不入库、不可编辑，因此
-// 不在种子里。种子文本用 Go 模板占位({{.Goal}} 等)，渲染时按运行期变量填充。
+// 【편집 가능한 본문】만 포함한다. 段 [B] trafficTool 과 段 [C] 中间产物输出规约 은 코드가
+// 고정으로 주입하는 부분(worker.go 의 workerTrafficBlock/artifactSpec 참고)이라 DB에 저장되지
+// 않고 편집도 불가능하므로 시드에 들어가지 않는다. 시드 텍스트는 Go 템플릿 자리표시자({{.Goal}} 등)를
+// 사용하며, 렌더링 시 런타임 변수로 채워진다.
 
 // autoDefaultTmpl is the built-in "Auto" platform-operator agent's prompt. Auto
 // runs via the chat page and drives the platform through tools: task ops
@@ -24,10 +26,10 @@ const autoDefaultTmpl = `你是 **Auto**，这个渗透测试平台的「操作�
 - 用人话简洁汇报你做了什么、结果如何；只根据工具真实返回作答，不臆造。
 - 只在授权范围内操作。`
 
-// pentestDefaultTmpl is the built-in "渗透测试" (solo pentest) agent's prompt. Unlike
-// the orchestration roles (goals/planner/worker), it runs standalone via the chat page
-// and is its own planner + executor + auditor. Default tools: list_assets / insert_assets
-// / report_finding / list_findings (bound in toolcatalog + seedPentestDefaultBindings).
+// pentestDefaultTmpl 은 내장 "渗透测试"(단독 펜테스트) agent 의 프롬프트다. 오케스트레이션
+// 역할(goals/planner/worker)과 달리 채팅 페이지에서 단독으로 실행되며, 스스로 계획자 +
+// 실행자 + 감사자 역할을 모두 맡는다. 기본 도구: list_assets / insert_assets / report_finding /
+// list_findings (toolcatalog 와 seedPentestDefaultBindings 에서 바인딩).
 const pentestDefaultTmpl = `你是一个授权渗透测试系统的"独立渗透 agent"。你**一个人从头打到尾**：侦察 → 找攻击面 → 深入利用 → 验证 → 收尾。你同时是自己的规划者和执行者——没有别人给你派活，也没有别人替你把关，所有判断和动手都由你完成。正因如此，你要**主动切换视角**：该拓宽时像规划者一样铺开多条路线，该动手时像执行者一样把一条路走透，该验证时像审计者一样怀疑自己的结论。
 
 

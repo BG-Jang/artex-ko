@@ -100,7 +100,7 @@ func (g *Guard) applyIntercept(ctx context.Context, ev hook.Event) hook.Result {
 	}
 	switch dec.Action {
 	case "deny":
-		// 观测:deny 命中不阻塞审批,直接记一条 denied（历史/任务拦截页可见）。
+		// 관측: deny 적중은 승인을 막지 않고, denied 기록 한 건만 남긴다(이력/태스크 가로채기 페이지에서 확인 가능).
 		g.interceptor.Log(ctx, intercept.ConvIDFromContext(ctx), dec, ev.ToolName, ev.Input, "denied")
 		return g.block(ev.ToolName, systemBlockMessage(dec.Message), "")
 	case "allow":
@@ -111,7 +111,7 @@ func (g *Guard) applyIntercept(ctx context.Context, ev hook.Event) hook.Result {
 		// F14 두뇌 보존 판단: 아래 두 차단 사유와 systemBlockMessage 프레이밍은 번역하지
 		// 않고 중국어 원문을 유지한다. 이 문자열은 g.block → hook.Result.Message 로 에이전트
 		// 에게 돌아가는 tool_result(펜테스트 에이전트가 차단을 표적 방어로 오인해 우회를
-		// 시도하지 않도록 유도하는 의도적 조종 문구, BRIEF 段[A] 성능 보존 대상)이다. 더구나
+		// 시도하지 않도록 유도하는 의도적 조종 문구, BRIEF 단락[A] 성능 보존 대상)이다. 더구나
 		// ask 차단 경로는 deny 경로와 달리 Interceptor.Log 를 타지 않아, g.block → g.record 가
 		// 같은 프레이밍 전문을 감사 로그(GET /api/audit → entries[].reason)에도 그대로 싣는다.
 		// 즉 하나의 문자열이 에이전트 입력과 표시를 겸한다(F16 동형). 표시만 한국어로 떼어내려면
@@ -135,15 +135,14 @@ func (g *Guard) applyIntercept(ctx context.Context, ev hook.Event) hook.Result {
 // systemBlockMessage frames an intercept block as an ARTEX platform-governance
 // decision so the agent does not mistake it for a target-side defense.
 //
-// The bare reasons ("禁止执行此工具" / "用户拒绝") read exactly like a WAF/403 on
-// the target, so a pentest agent's instinct is to bypass them — rewrite the
-// command, swap the payload, re-encode, retry. That is both futile (the platform
-// blocks the class of action, not one string) and wrong (it's a policy decision,
-// not an obstacle to defeat). This prefix states plainly that the block comes
-// from the platform, is not the target's protection, and that the operation is
-// forbidden — so the agent pivots to another approach instead of evading it.
-// Audit/history rows keep the raw reason (see Interceptor.Log); only the
-// model-facing tool_result carries this framing.
+// 원문 사유("禁止执行此工具" / "用户拒绝", 즉 도구 실행 금지 / 사용자 거부)는 대상 측
+// WAF/403 응답과 똑같이 읽힌다. 그래서 펜테스트 에이전트는 이를 우회하려 한다. 명령을 고치고,
+// 페이로드를 바꾸고, 다시 인코딩하고, 재시도하는 식이다. 이는 헛될 뿐 아니라(플랫폼은 문자열
+// 하나가 아니라 행위 부류 전체를 막는다) 잘못된 대응이기도 하다(정책 결정이지 뚫어야 할
+// 장애물이 아니다). 이 프레이밍은 차단이 플랫폼에서 왔고 대상의 보호 기능이 아니며 해당 작업이
+// 금지되어 있음을 분명히 밝혀, 에이전트가 회피하지 않고 다른 접근으로 방향을 돌리게 한다.
+// 감사/이력 행에는 원문 사유가 남고(Interceptor.Log 참고), 프레이밍은 모델에 전달되는
+// tool_result 에만 실린다.
 func systemBlockMessage(reason string) string {
 	return "【ARTEX 平台管控·非目标防御】此调用被平台拦截。" +
 		"原因：" + reason + "。此操作被禁止。"

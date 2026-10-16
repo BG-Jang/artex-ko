@@ -51,7 +51,7 @@ func TestDeleteReclaimsIndexSpace(t *testing.T) {
 	if n, err := tr.DeleteHostsExact([]string{host}); err != nil || n != 30 {
 		t.Fatalf("DeleteHostsExact=(%d,%v)，应为 (30,nil)", n, err)
 	}
-	tr.reaping.Wait() // 回收在后台分块进行
+	tr.reaping.Wait() // 회수는 백그라운드에서 청크 단위로 진행됨
 
 	after := tr.indexBytes()
 	if after > grown/4 {
@@ -142,7 +142,7 @@ func TestReclaimOnLegacyIndexIsHarmless(t *testing.T) {
 	if n, err := tr.DeleteHostsExact([]string{host}); err != nil || n != 8 {
 		t.Fatalf("DeleteHostsExact=(%d,%v)，应为 (8,nil)", n, err)
 	}
-	tr.reaping.Wait() // 必须收敛，不能卡在预算里
+	tr.reaping.Wait() // 반드시 수렴해야 하며, 예산 안에서 멈추면 안 됨
 
 	// The freelist stays populated: that is the whole reason a compaction entry
 	// point is needed for pre-existing databases.

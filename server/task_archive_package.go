@@ -590,10 +590,10 @@ func writeTaskArchivePackage(path, payloadDir string, snapshot *pgdb.TaskArchive
 			return err
 		}
 		if info.Mode()&os.ModeSymlink != 0 {
-			// 归档格式端到端只支持普通文件与目录（解包端对其它类型直接报错），
-			// 无法还原符号链接。跳过而非整包失败：不读取链接目标(lstat，不越出目录树)，
-			// 也不写入 symlink 条目；链接指向树内时目标文件本身仍会被单独遍历归档。
-			log.Printf("[task-archive] 跳过符号链接（归档不支持，不影响其它文件）：%s", current)
+			// 아카이브 형식은 종단 간 일반 파일과 디렉터리만 지원한다(언패킹 측은 그 외 타입에 대해 바로 오류를 냄),
+			// 심볼릭 링크는 복원할 수 없다. 전체 패키지를 실패시키지 않고 건너뛴다: 링크 대상은 읽지 않고(lstat, 디렉터리 트리를 벗어나지 않음)
+			// symlink 항목도 기록하지 않는다. 링크가 트리 내부를 가리키는 경우 대상 파일 자체는 여전히 별도로 순회하여 아카이브된다.
+			log.Printf("[task-archive] 심볼릭 링크 건너뜀(아카이브 미지원, 다른 파일에는 영향 없음): %s", current)
 			return nil
 		}
 		header, err := tar.FileInfoHeader(info, "")

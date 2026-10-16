@@ -27,15 +27,13 @@ type GoalsVars struct{ EngagementDescription, DataDir, Now string }
 // elapsed time (e.g. a timed benchmark's "last N hours" window).
 func nowStr() string { return time.Now().Format("2006-01-02 15:04:05 MST") }
 
-// renderSystem returns the rendered system-prompt BODY (段 [A]) for agentKey.
-// Precedence: the DB-stored template (if any) over the built-in default template
-// (def). BOTH are Go templates now — the built-in default is seeded into the DB
-// verbatim, so the two paths render identically until a user edits the prompt.
-// Rendering always runs (def used to be pre-substituted plain text; it is now a
-// {{.Var}} template like the DB one). On any render error we fall back to the
-// default template, then to the raw default string — an agent never starts with a
-// half-rendered prompt. Callers append the code-owned tail (trafficTool / 中间产物
-// 输出规约) AFTER this, so those can't be edited away via the DB body.
+// renderSystem 은 agentKey 에 대해 렌더링된 시스템 프롬프트 본문(段 [A])을 반환한다.
+// 우선순위: DB 에 저장된 템플릿(있는 경우)이 내장 기본 템플릿(def)보다 앞선다. 지금은 둘 다 Go 템플릿이다 ——
+// 내장 기본값은 DB 에 그대로 시드되므로, 사용자가 프롬프트를 편집하기 전까지 두 경로의 렌더링 결과는 같다.
+// 렌더링은 항상 수행한다(def 는 예전에는 미리 치환된 평문이었으나, 지금은 DB 템플릿과 같은 {{.Var}} 템플릿이다).
+// 렌더링 오류가 나면 기본 템플릿으로, 그래도 실패하면 원본 기본 문자열로 떨어진다 —— agent 는 절대 반쯤 렌더링된
+// 프롬프트로 시작하지 않는다. 호출자는 이 결과 뒤에 코드가 소유한 꼬리(trafficTool / 中间产物输出规约)를 덧붙이므로,
+// 이 부분을 DB 본문에서 편집해 없앨 수 없다.
 func renderSystem(agentKey, def string, vars any) string {
 	tmpl := def
 	if PromptOverride != nil {
@@ -53,30 +51,22 @@ func renderSystem(agentKey, def string, vars any) string {
 	return def
 }
 
-// langDirective is the output-language tail: a code-owned segment
-// appended AFTER the rendered body and the artifact/traffic tails on every
-// user-facing agent role, so a DB-edited prompt body can never drop it — the same
-// guarantee artifactSpec gives. It does NOT translate the agent "brain": the
-// benchmarked Chinese reasoning body (段 [A]) stays verbatim. It only constrains
-// the LANGUAGE of what the agent SHOWS to the user. Written in Chinese so it stays
-// in the body's language (keeping the model's reasoning register stable) while
-// forcing the chosen display language — this is the localization approach:
-// preserve behavior, localize the surface the user reads. Raw technical strings
-// (commands, payloads, code, URLs, log/response excerpts) are explicitly kept
-// verbatim so evidence and reproduction steps are not mangled by translation.
+// langDirective 는 출력 언어 꼬리 부분이다. 코드가 소유하는 세그먼트로, 모든 사용자 대면 agent 역할에서
+// 렌더링된 본문과 artifact/traffic 꼬리 뒤에 붙는다. 따라서 DB 에서 편집된 프롬프트 본문이 이것을 떨어뜨릴 수 없다 ——
+// artifactSpec 이 주는 보장과 같다. 에이전트의 「두뇌」(벤치마크된 중국어 추론 본문 段 [A])은 번역하지 않는다.
+// 에이전트가 사용자에게 「보여 주는」 언어만 제한한다. 지시문을 중국어로 쓰는 이유는 본문과 같은 언어로 두어
+// 모델의 추론 어조를 안정시키면서 선택한 표시 언어를 강제하기 위해서다 —— 이것이 현지화 방식이다:
+// 동작은 보존하고, 사용자가 읽는 표면만 현지화한다. 원문 기술 문자열(명령, payload, 코드, URL, 로그/응답 발췌)은
+// 증거와 재현 단계가 번역으로 훼손되지 않도록 명시적으로 그대로 보존한다.
 //
-// Two anti-drift clauses were added after the end-to-end run (L1): live models
-// leaked (1) Chinese into the planner's situation summary — mirroring the Chinese
-// brain body (段 [A]) — and (2) the target app/evidence language into
-// report_finding's structured fields. The directive names the planner situation
-// summary as a user-facing field and forbids mirroring BOTH the Chinese
-// instruction language AND the target/material language in the display fields.
+// 종단 간 실행(L1) 이후 두 가지 드리프트 방지 절이 추가되었다: 실시간 모델이 (1) 계획자의 상황 요약에 중국어를
+// 섞었고(중국어 두뇌 본문 段 [A] 를 그대로 따라 함), (2) 대상 앱/증거의 언어를 report_finding 의 구조화 필드에
+// 섞었다. 지시문은 계획자 상황 요약을 사용자 대면 필드로 명시하고, 표시 필드에서 중국어 지시 언어와
+// 대상/자료 언어를 모두 미러링하지 못하도록 금지한다.
 //
-// The display language is a parameter (code = "en"/"ko"/"zh"/"es"): the directive
-// stays in Chinese but the "write in <language>" token is swapped per target. When
-// the display language IS Chinese ("zh"), Chinese output is the goal, so the
-// "never emit Chinese to the user" clause is replaced by one that simply affirms
-// Chinese display and still forbids mirroring the target/material language.
+// 표시 언어는 매개변수다(code = "en"/"ko"/"zh"/"es"). 지시문 자체는 중국어로 두되, "<language> 로 쓰라"는 토큰은
+// 대상마다 바꾼다. 표시 언어가 중국어("zh")일 때는 중국어 출력이 목표이므로, 「사용자에게 중국어를 내보내지 말라」는
+// 절 대신 중국어 표시를 그대로 긍정하는 절을 쓰되, 대상/자료 언어를 미러링하는 것은 여전히 금지한다.
 func langDirective(code string) string {
 	phrase := langPhrase[code]
 	bare := langBare[code]

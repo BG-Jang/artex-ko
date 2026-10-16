@@ -32,7 +32,7 @@ func rawString(raw json.RawMessage) string {
 type TaskDTO struct {
 	ID                 string             `json:"id"`
 	ExplorationID      int64              `json:"exploration_id"`
-	Name               string             `json:"name"` // 可选任务名称;空=未命名
+	Name               string             `json:"name"` // 선택적 작업 이름; 비어 있으면 이름 없음
 	CategoryID         *int64             `json:"category_id,omitempty"`
 	CategoryName       string             `json:"category_name,omitempty"`
 	Pinned             bool               `json:"pinned"`
@@ -50,8 +50,8 @@ type TaskDTO struct {
 	Tokens             TokenTotalDTO      `json:"tokens"` // whole-task token consumption
 	GoalsTotal         int                `json:"goals_total"`
 	GoalsMet           int                `json:"goals_met"`
-	InFlight           int                `json:"in_flight"`                // 运行中 Worker 数（state=running 的意图）
-	Findings           FindingSeverityDTO `json:"findings"`                 // 该任务已登记的漏洞数（findings 表，按严重度分档）
+	InFlight           int                `json:"in_flight"`                // 실행 중인 워커 수(state=running 인 의도)
+	Findings           FindingSeverityDTO `json:"findings"`                 // 이 작업에 등록된 취약점 수(findings 테이블, 심각도별 분류)
 	LLMProfileID       *int64             `json:"llm_profile_id,omitempty"` // LLM profile used for this task; nil = default
 	LLMProfileIDs      []int64            `json:"llm_profile_ids"`
 	ActiveLLMProfileID *int64             `json:"active_llm_profile_id,omitempty"`
@@ -60,10 +60,10 @@ type TaskDTO struct {
 	SourceTaskIDs      []string           `json:"source_task_ids"`
 	ArchiveBlockedBy   string             `json:"archive_blocked_by_task_id,omitempty"`
 	CompanyIDs         []int64            `json:"company_ids"`
-	CoverageEnabled    bool               `json:"coverage_enabled"` // 资产覆盖度功能开关(创建时定)
+	CoverageEnabled    bool               `json:"coverage_enabled"` // 자산 커버리지 기능 스위치(생성 시 결정)
 }
 
-// FindingSeverityDTO 是任务列表里按严重度分档的漏洞计数（严重/高/中/低）。
+// FindingSeverityDTO 는 작업 목록에서 심각도별로 나눈 취약점 수(심각/높음/중간/낮음)다.
 type FindingSeverityDTO struct {
 	Critical int `json:"critical"`
 	High     int `json:"high"`
@@ -186,7 +186,7 @@ type TaskNodeDTO struct {
 	TS           string `json:"ts"`
 	SourceTaskID string `json:"source_task_id,omitempty"`
 	Inherited    bool   `json:"inherited,omitempty"`
-	DeleteReason string `json:"delete_reason,omitempty"` // 意图假删除(state='deleted')时的删除原因
+	DeleteReason string `json:"delete_reason,omitempty"` // 의도 소프트 삭제(state='deleted') 시의 삭제 사유
 }
 
 func taskNodeDTO(n *db.Node) TaskNodeDTO {
@@ -208,7 +208,7 @@ func taskNodeDTO(n *db.Node) TaskNodeDTO {
 }
 
 // GoalDTO is a goal node with its payload unpacked into text/vulnclass — the shape
-// the 总览「目标管理」UI works with (vs TaskNodeDTO which carries raw payload JSON).
+// the 개요「목표 관리」 UI 가 다루는 (vs TaskNodeDTO which carries raw payload JSON).
 type GoalDTO struct {
 	ID        string `json:"id"`
 	Text      string `json:"text"`
@@ -242,7 +242,7 @@ func goalDTOs(in []*db.Node) []GoalDTO {
 	return out
 }
 
-// ConstraintDTO is one operation constraint (allow/deny) for the 总览「约束管理」UI.
+// ConstraintDTO is one operation constraint (allow/deny) for the 개요「제약 관리」 UI.
 type ConstraintDTO struct {
 	ID     string `json:"id"`
 	Kind   string `json:"kind"` // allow | deny
@@ -312,12 +312,12 @@ type FindingDTO struct {
 	ID        string `json:"id"`
 	FindingID string `json:"finding_id,omitempty"` // standalone findings-table id — the handle for status updates
 	VulnClass string `json:"vulnclass"`
-	Name      string `json:"name,omitempty"` // 漏洞名称;为空时前端回退展示 vulnclass
+	Name      string `json:"name,omitempty"` // 취약점 이름; 비어 있으면 프론트엔드가 vulnclass 를 대신 표시
 	Severity  string `json:"severity"`       // critical | high | medium | low
 	Status    string `json:"status"`         // pending | in_progress | confirmed | resolved | fixed | false_positive | ignored | duplicate | risk_accepted
 	Summary   string `json:"summary"`
 	Evidence  string `json:"evidence"`
-	Report    string `json:"report,omitempty"` // 详细报告(Markdown);仅详情接口返回,列表为空
+	Report    string `json:"report,omitempty"` // 상세 보고서(Markdown); 상세 조회 API 에서만 반환되며 목록에서는 비어 있음
 
 	IntentID        string            `json:"intent_id,omitempty"`
 	ParamID         string            `json:"param_id,omitempty"`
@@ -398,7 +398,7 @@ func findingDTO(n *db.Node) FindingDTO {
 }
 
 // findingDTOsForTask converts a task's finding nodes to DTOs, stamping each with
-// the owning task's id/description so the global 发现 page can group across tasks.
+// the owning task's id/description so the 전역 발견(취약점) 페이지 can group across tasks.
 // meta maps node id → the standalone findings row (id + status + asset ids), so the
 // per-task view shows the same triage state and anchored assets as the global page;
 // nodes with no row keep the 'pending' default and no finding_id (not editable).
@@ -544,8 +544,8 @@ type AgentDTO struct {
 	RunSecs          int    `json:"run_seconds"`
 	WebSearch        bool   `json:"web_search"`
 	InteractiveShell bool   `json:"interactive_shell"`
-	LLMProfileID     *int64 `json:"llm_profile_id"` // 绑定的 LLM 配置;null=跟随任务/全局
-	// P3 触发后处理策略(仅自定义 agent 有意义)。
+	LLMProfileID     *int64 `json:"llm_profile_id"` // 바인딩된 LLM 설정; null=작업/전역 설정 따름
+	// P3 트리거 후처리 정책(커스텀 에이전트에만 의미가 있음).
 	TriggerRunMode     string `json:"trigger_run_mode"`
 	TriggerMergeMode   string `json:"trigger_merge_mode"`
 	TriggerMaxParallel int    `json:"trigger_max_parallel"`
@@ -599,23 +599,23 @@ type LLMProfileDTO struct {
 	ThinkingType    string  `json:"thinking_type"`
 	ReasoningEffort string  `json:"reasoning_effort"`
 	IsDefault       bool    `json:"is_default"`
-	// 轮询(故障转移)参数：priority 越大越先被选中(激活配置恒为链首)；
-	// pool_exclude=true 则不作为故障转移目标，但仍可被 agent/任务显式绑定。
+	// 폴링(장애 전환) 매개변수: priority 가 클수록 먼저 선택됨(활성 설정은 항상 맨 앞);
+	// pool_exclude=true 이면 장애 전환 대상에서 제외되지만, 에이전트/작업에서 명시적으로 바인딩할 수는 있다.
 	Priority    int  `json:"priority"`
 	PoolExclude bool `json:"pool_exclude"`
-	// 收发模式：true=流式(SSE) | false=非流式。没有 omitempty —— false 必须出现在
-	// 响应里，否则前端读不到「非流式」，开关会回落成默认的流式。
+	// 송수신 모드: true=스트리밍(SSE) | false=비스트리밍. omitempty 없음 — false 가 응답에 반드시 나타나야
+	// 하며, 그렇지 않으면 프론트엔드가 「비스트리밍」을 읽지 못해 스위치가 기본값인 스트리밍으로 되돌아간다.
 	Streaming bool `json:"streaming"`
-	// 单次回复输出上限(0=不发送，由服务端默认值决定)，以及它用哪个请求字段名
-	// (''=max_tokens | 'max_completion_tokens'，仅 openai 格式有意义)。
+	// 단일 응답 출력 상한(0=전송 안 함, 서버 기본값 사용), 그리고 어떤 요청 필드명을 쓸지
+	// (''=max_tokens | 'max_completion_tokens', openai 형식에서만 의미가 있음).
 	MaxTokens      int    `json:"max_tokens"`
 	MaxTokensField string `json:"max_tokens_field"`
-	// 自定义会话头名：非空时每次请求带该 HTTP 头，头值=当前会话/意图的 session id。
-	// ''=不发送。用于按 session-id 头做提示缓存/粘性路由的网关。
+	// 커스텀 세션 헤더 이름: 비어 있지 않으면 요청마다 해당 HTTP 헤더를 붙이며, 값=현재 세션/의도의 session id.
+	// ''=전송 안 함. session-id 헤더로 프롬프트 캐시/스티키 라우팅을 하는 게이트웨이용이다.
 	SessionHeaderKey string `json:"session_header_key"`
-	// 本配置对重试的覆盖(建连/空响应/同 provider 安全窗口)。每项 attempts:
-	// 0=继承全局策略 | -1=关闭该层重试 | >0=次数；interval_ms: 0=用默认指数退避 |
-	// >0=改用该固定毫秒间隔。全 0 = 完全跟随全局，即历史行为。
+	// 본 설정이 재시도에 주는 오버라이드(연결 수립/빈 응답/동일 provider 안전 구간). 각 항목 attempts:
+	// 0=전역 정책 상속 | -1=해당 계층 재시도 끔 | >0=횟수; interval_ms: 0=기본 지수 백오프 |
+	// >0=해당 고정 밀리초 간격 사용. 모두 0 = 전역을 완전히 따름(기존 동작).
 	Retry db.RetryOverride `json:"retry"`
 }
 

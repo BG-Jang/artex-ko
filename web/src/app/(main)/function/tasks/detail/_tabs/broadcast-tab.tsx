@@ -39,9 +39,9 @@ const POLL_MS = 8000;
 
 type KindMeta = { icon: LucideIcon; dot: string; chip: string };
 
-// 播报板自己的展示元数据。刻意不复用探索链路图那份:图是拓扑视角(节点卡片、连线配色),
-// 播报是流水视角(时间轴行),两边的信息密度和配色需求不同,各自演进更省事。
-// 文案走 i18n(taskDetail.broadcastTab.kind),这里只留图标与配色。
+// 중계판 자체의 표시 메타데이터. 탐색 경로 그래프의 것을 일부러 재사용하지 않는다. 그래프는 토폴로지 관점(노드 카드, 연결선 색)이고,
+// 중계는 흐름 관점(타임라인 행)이라 두 쪽의 정보 밀도와 색 요구가 달라, 각자 발전시키는 편이 간단하다.
+// 문구는 i18n(taskDetail.broadcastTab.kind)을 쓰고, 여기에는 아이콘과 색만 둔다.
 const KIND_META: Record<string, KindMeta> = {
   begin: {
     icon: FlagIcon,
@@ -89,11 +89,11 @@ function kindKeyOf(kind: string): string {
   return kind in KIND_META ? kind : "fact";
 }
 
-// 可筛选的类型。起点(fact/state=origin)不单独列,它跟着「事实」一起过滤。
+// 필터할 수 있는 유형. 시작점(fact/state=origin)은 따로 나열하지 않고 “사실”과 함께 걸러진다.
 const FILTER_KINDS: ExploreKind[] = ["goal", "intent", "fact", "finding", "hint", "digest"];
 
-// goal / intent 的状态语义由全局 status 表提供(StatusBadge);其余类型的状态只在
-// 图和播报里出现,这里补一份(文案走 i18n,这里只留配色)。
+// goal / intent의 상태 의미는 전역 status 표(StatusBadge)가 제공하고, 나머지 유형의 상태는
+// 그래프와 중계판에 나타나므로, 여기서 한 벌 보충한다(문구는 i18n, 여기에는 색만 둔다).
 const STATE_TONE: Record<string, Record<string, Tone>> = {
   fact: {
     origin: "slate",
@@ -114,7 +114,7 @@ const STATE_TONE: Record<string, Record<string, Tone>> = {
   },
 };
 
-// 任务根是 state=origin 的 fact,播报里读作「起点」。
+// 작업 루트는 state=origin인 fact이며, 중계판에서는 “시작점”으로 읽힌다.
 function viewKind(n: TaskNode): string {
   return n.type === "fact" && n.state === "origin" ? "begin" : n.type;
 }
@@ -141,7 +141,7 @@ function summaryOf(n: TaskNode): string {
         if (typeof v === "string" && v.trim()) return v;
       }
     } catch {
-      return raw; // 非 JSON payload:原样播报
+      return raw; // JSON이 아닌 payload: 있는 그대로 중계
     }
   }
   return raw;
@@ -194,8 +194,8 @@ function KindChip({ kind }: { kind: string }) {
   );
 }
 
-// 节点锚定的资产:类型标签 + 可辨识文本。数据随播报页一起下发(node id → 资产),
-// 展开时直接展示,不额外请求。类型文案走 i18n(assetType),未覆盖的类型退回原始字符串。
+// 노드에 고정된 자산: 유형 라벨 + 식별 가능한 텍스트. 데이터는 중계 페이지와 함께 내려오며(node id → 자산),
+// 펼칠 때 바로 보여 주고 추가 요청은 하지 않는다. 유형 문구는 i18n(assetType)을 쓰며, 매핑이 없는 유형은 원래 문자열로 돌아간다.
 function AssetList({ assets, dense = false }: { assets: FindingAsset[]; dense?: boolean }) {
   const t = useTranslations("taskDetail.broadcastTab");
   if (assets.length === 0) return null;
@@ -224,8 +224,8 @@ function AssetList({ assets, dense = false }: { assets: FindingAsset[]; dense?: 
   );
 }
 
-// 悬停在上下游条目上时弹出的节点名片:类型/状态/来源/时间 + 摘要 + payload 片段 + 涉及资产。
-// 数据来自本页已经拿到的 refs,不额外发请求——播报接口已经把邻居节点整份带回来了。
+// 상류/하류 항목에 호버하면 뜨는 노드 명함: 유형/상태/출처/시간 + 요약 + payload 조각 + 관련 자산.
+// 데이터는 이 페이지가 이미 받은 refs에서 오므로 추가 요청을 보내지 않는다 — 중계 API가 이웃 노드를 이미 통째로 내려주었다.
 function RelatedNodeCard({ node, assets }: { node: TaskNode; assets: FindingAsset[] }) {
   const t = useTranslations("taskDetail.broadcastTab");
   const kind = viewKind(node);
@@ -255,7 +255,7 @@ function RelatedNodeCard({ node, assets }: { node: TaskNode; assets: FindingAsse
   );
 }
 
-// 一条播报涉及的上下游:上游 = 指向本节点的边,下游 = 本节点指出去的边。
+// 한 중계와 관련된 상류/하류: 상류 = 이 노드를 가리키는 간선, 하류 = 이 노드가 가리키는 간선.
 function RelatedList({
   title,
   rows,
@@ -331,7 +331,7 @@ function BroadcastRow({
   const upstream = edges.filter((e) => e.dst === node.id).map((e) => ({ rel: e.rel, id: e.src }));
   const downstream = edges.filter((e) => e.src === node.id).map((e) => ({ rel: e.rel, id: e.dst }));
 
-  // 相对时间:阈值切档,文案与单位走 i18n。ts 解析失败(NaN)时返回空串,不显示。
+  // 상대 시간: 임계값으로 구간을 나누고, 문구와 단위는 i18n을 쓴다. ts 파싱에 실패(NaN)하면 빈 문자열을 반환해 표시하지 않는다.
   const relTime = (tsMs: number, nowMs: number): string => {
     if (!nowMs || !tsMs) return "";
     const sec = Math.max(0, (nowMs - tsMs) / 1000);
@@ -343,13 +343,13 @@ function BroadcastRow({
 
   return (
     <div className={cn("relative grid grid-cols-[4.5rem_1.75rem_1fr] gap-x-2", fresh && "bg-primary/5")}>
-      {/* 时间列 */}
+      {/* 시간 열 */}
       <div className="py-3 text-right text-xs text-muted-foreground tabular-nums">
         <div>{Number.isNaN(ts) ? "--:--:--" : clockFmt.format(ts)}</div>
         <div className="text-[11px] opacity-70">{relTime(ts, now)}</div>
       </div>
 
-      {/* 时间轴:竖线 + 类型圆点 */}
+      {/* 타임라인: 세로선 + 유형 점 */}
       <div className="relative flex justify-center">
         <span className="absolute inset-y-0 w-px bg-border" />
         <span
@@ -362,7 +362,7 @@ function BroadcastRow({
         </span>
       </div>
 
-      {/* 内容列 */}
+      {/* 내용 열 */}
       <div className="min-w-0 border-b py-3 pr-1 last:border-b-0">
         <button
           type="button"
@@ -451,8 +451,8 @@ export function BroadcastTab({ taskId }: { taskId: string }) {
   const seenRef = React.useRef<Set<string>>(new Set());
   const baselineRef = React.useRef<number | null>(null);
   const streamRef = React.useRef("");
-  // 只有「最新在前的第 1 页」才是真正的直播位；其余位置轮询只更新未读计数，
-  // 不动列表，免得翻页/展开时内容在脚下变。
+  // “최신순 1페이지”만 진짜 라이브 위치이고, 나머지 위치의 폴링은 미확인 개수만 갱신하며,
+  // 목록은 건드리지 않는다. 페이지를 넘기거나 펼칠 때 내용이 발밑에서 바뀌지 않게 하기 위해서다.
   const atLive = page === 1 && order === "desc";
 
   React.useEffect(() => {
@@ -461,7 +461,7 @@ export function BroadcastTab({ taskId }: { taskId: string }) {
     return () => clearInterval(t);
   }, []);
 
-  // 输入防抖:打字停 300ms 才真正查询,并回到第一页。
+  // 입력 디바운스: 타이핑이 300ms 멈춰야 실제로 조회하며, 첫 페이지로 돌아간다.
   React.useEffect(() => {
     const t = setTimeout(() => {
       setQuery(queryInput);
@@ -472,9 +472,9 @@ export function BroadcastTab({ taskId }: { taskId: string }) {
 
   React.useEffect(() => {
     let alive = true;
-    let rendered = false; // 本次查询是否已经把内容渲染出来过
-    // 换任务/筛选/排序 = 换了一条播报流:清掉「新」标记和未读基线。翻页不算换流,
-    // 否则回到最新时就没有未读计数可算了。
+    let rendered = false; // 이번 조회에서 내용을 이미 렌더링했는지 여부
+    // 작업/필터/정렬 변경 = 중계 흐름이 바뀌었다는 뜻: “새” 표시와 미확인 기준선을 지운다. 페이지 넘김은 흐름 변경이 아니므로,
+    // 그렇지 않으면 최신으로 돌아왔을 때 미확인 개수를 계산할 수 없게 된다.
     const stream = `${taskId}|${kinds.join(",")}|${query}|${order}`;
     if (streamRef.current !== stream) {
       streamRef.current = stream;
@@ -487,7 +487,7 @@ export function BroadcastTab({ taskId }: { taskId: string }) {
         .explorationNodes(taskId, { page, size, kinds, q: query, order })
         .then((r) => {
           if (!alive) return;
-          // 直播位每轮都刷新;其它位置只渲染第一次,之后轮询仅更新未读计数。
+          // 라이브 위치는 매 라운드 새로고침하고, 다른 위치는 처음 한 번만 렌더링하며 이후 폴링은 미확인 개수만 갱신한다.
           if (atLive || !rendered) {
             rendered = true;
             setItems(r.items);
@@ -509,7 +509,7 @@ export function BroadcastTab({ taskId }: { taskId: string }) {
           setLoaded(true);
         })
         .catch(() => {
-          // 轮询是尽力而为:保留上一次成功的播报内容,下一轮自动重试。
+          // 폴링은 최선 노력 방식이다: 직전에 성공한 중계 내용을 유지하고, 다음 라운드에서 자동으로 재시도한다.
         });
     void load();
     if (!live) {
@@ -535,8 +535,8 @@ export function BroadcastTab({ taskId }: { taskId: string }) {
     setPending(0);
   };
 
-  // 服务端的 refs 只补「不在本页的邻居」,同页节点之间的引用要靠 items 自己兜底,
-  // 否则相邻两条播报互相引用时会退化成光秃秃的「节点 #id」。
+  // 서버의 refs는 “이 페이지에 없는 이웃”만 채우므로, 같은 페이지 노드 사이의 참조는 items 자체로 처리해야 하며,
+  // 그렇지 않으면 인접한 두 중계가 서로 참조할 때 맨몸의 “노드 #id”로 퇴화해 버린다.
   const nodeIndex = React.useMemo(() => {
     const idx: Record<string, TaskNode> = { ...refs };
     for (const n of items) idx[n.id] = n;
@@ -547,12 +547,12 @@ export function BroadcastTab({ taskId }: { taskId: string }) {
   const start = total === 0 ? 0 : (page - 1) * size + 1;
   const end = (page - 1) * size + items.length;
 
-  // 换任务或筛选后条数变少时,把越界的页码收回来。
+  // 작업을 바꾸거나 필터 후 건수가 줄면, 범위를 벗어난 페이지 번호를 되돌린다.
   React.useEffect(() => {
     if (page > pageCount) setPage(pageCount);
   }, [page, pageCount]);
 
-  // 按天分组:播报流按日期断行,长任务翻页时还能认出「这是哪天的事」。
+  // 날짜별 그룹: 중계 흐름을 날짜로 끊어, 긴 작업을 넘겨 볼 때도 “이게 언제 일인지”를 알아볼 수 있게 한다.
   const groups: Array<{ day: string; rows: TaskNode[] }> = [];
   for (const node of items) {
     const ts = Date.parse(node.ts);
@@ -564,7 +564,7 @@ export function BroadcastTab({ taskId }: { taskId: string }) {
 
   return (
     <Card className="overflow-hidden py-0">
-      {/* 工具条 */}
+      {/* 툴바 */}
       <div className="flex flex-wrap items-center gap-2 border-b px-4 py-2.5">
         <div className="relative w-full sm:w-64">
           <SearchIcon className="absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -636,7 +636,7 @@ export function BroadcastTab({ taskId }: { taskId: string }) {
         </div>
       </div>
 
-      {/* 离开直播位时的未读提示 */}
+      {/* 라이브 위치를 벗어났을 때의 미확인 안내 */}
       {!atLive && pending > 0 && (
         <button
           type="button"

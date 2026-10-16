@@ -3,9 +3,9 @@ package notify
 import "testing"
 
 func TestParseFilterMalformedFallsBackToMatchAll(t *testing.T) {
-	// 畸形 JSON、空输入、类型不对的字段——全部必须退化为零值 Filter，
-	// 即「不过滤」。这条不变量是「宁可多推不可漏推」的落点：
-	// 一旦这里改成报错或半解析，用户配错一个字符就会静默丢掉所有高危通知。
+	// 잘못된 JSON, 빈 입력, 타입이 틀린 필드는 모두 제로값 Filter로 퇴화해야 하며,
+	// 즉 '필터링하지 않음'이 되어야 한다. 이 불변식은 '차라리 더 보낼지언정 누락하지 않는다'의 귀결이다.
+	// 여기서 오류를 내거나 반쯤만 파싱하도록 바뀌면, 사용자가 문자 하나만 잘못 입력해도 고위험 알림이 조용히 사라진다.
 	cases := []struct {
 		name string
 		raw  string
@@ -22,7 +22,7 @@ func TestParseFilterMalformedFallsBackToMatchAll(t *testing.T) {
 			if f.MinSeverity != "" || len(f.TaskIDs) != 0 || len(f.AssetIDs) != 0 {
 				t.Fatalf("畸形配置应退化为零值 Filter，得到 %+v", f)
 			}
-			// 零值 Filter 必须命中任意事件。
+			// 제로값 Filter는 임의의 이벤트에 반드시 매칭되어야 한다.
 			ev := Snapshot{Kind: EventFindingCreated, Severity: "low", VulnClass: "XSS"}
 			if !Match(f, ev) {
 				t.Fatal("零值 Filter 应命中所有事件")
@@ -48,7 +48,7 @@ func TestMatchSeverityThreshold(t *testing.T) {
 		{"high", "low", false},
 		{"critical", "high", false},
 		{"critical", "critical", true},
-		// 未知级别序数为 0，应被任何非空门槛挡住（存疑时不推）。
+		// 알 수 없는 레벨의 서수는 0이므로, 비어 있지 않은 모든 임계값에 의해 차단되어야 한다 (의심스러우면 보내지 않음).
 		{"low", "", false},
 		{"low", "unknown", false},
 		{"", "", true},
@@ -109,12 +109,12 @@ func TestMatchVulnClassKeywords(t *testing.T) {
 		{"大小写不敏感", Filter{VulnClassInclude: []string{"sql"}}, "SQL注入", true},
 		{"exclude 命中即排除", Filter{VulnClassExclude: []string{"信息泄露"}}, "信息泄露", false},
 		{"exclude 未命中则放行", Filter{VulnClassExclude: []string{"信息泄露"}}, "SQL注入", true},
-		// 排除优先于包含：同时命中时应当出局。
+		// 제외가 포함보다 우선한다. 동시에 매칭되면 제외되어야 한다.
 		{"排除优先于包含", Filter{
 			VulnClassInclude: []string{"SQL"},
 			VulnClassExclude: []string{"注入"},
 		}, "SQL注入", false},
-		// 纯空白关键词应被忽略，否则会退化成「匹配所有含空格的字符串」。
+		// 공백만 있는 키워드는 무시해야 한다. 그렇지 않으면 '공백이 있는 모든 문자열과 매칭'으로 퇴화한다.
 		{"空白关键词被忽略", Filter{VulnClassInclude: []string{"", "  "}}, "SQL注入", false},
 	}
 	for _, tc := range cases {
@@ -128,14 +128,14 @@ func TestMatchVulnClassKeywords(t *testing.T) {
 
 func TestMatchStatusChangeRequiresOptIn(t *testing.T) {
 	ev := Snapshot{Kind: EventFindingStatusChanged, Severity: "critical", FromStatus: "pending", ToStatus: "fixed"}
-	// 默认关：绝大多数人说的「推送漏洞」指发现新漏洞，不是状态流水账。
+	// 기본값은 꺼짐: 대부분 사람들이 말하는 '취약점 알림'은 새로 발견된 취약점을 뜻하지, 상태 변경 로그를 뜻하지 않는다.
 	if Match(Filter{MinSeverity: "low"}, ev) {
 		t.Fatal("状态变更事件在未开启时应被跳过")
 	}
 	if !Match(Filter{OnStatusChange: true}, ev) {
 		t.Fatal("开启 on_status_change 后状态变更事件应命中")
 	}
-	// 创建事件不受 on_status_change 影响。
+	// 생성 이벤트는 on_status_change의 영향을 받지 않는다.
 	created := Snapshot{Kind: EventFindingCreated, Severity: "critical"}
 	if !Match(Filter{MinSeverity: "low"}, created) {
 		t.Fatal("创建事件不应依赖 on_status_change")

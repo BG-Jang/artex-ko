@@ -8,21 +8,21 @@ import (
 	"testing"
 )
 
-// 本文件锁住通用 Webhook 模板的**能力边界**。
+// 이 파일은 일반 Webhook 템플릿의 **능력 경계**를 고정한다.
 //
-// 这是全包唯一「用户提供的字符串会被当代码求值」的地方，所以要明确它能做什么、
-// 不能做什么，并用测试把这些性质固定下来——否则将来有人顺手给模板上下文加个
-// 方法、或在 FuncMap 里加个 readFile，能力面就静默扩大了，而 diff 看起来
-// 只是一个无害的小函数。
+// 이것이 패키지 전체에서 유일하게 '사용자가 제공한 문자열이 코드로 평가되는' 지점이므로, 무엇을 할 수 있고
+// 무엇을 할 수 없는지 명확히 하고, 테스트로 그 성질을 고정해야 한다. 그렇지 않으면 나중에 누군가 템플릿 컨텍스트에
+// 메서드를 추가하거나 FuncMap에 readFile을 넣어도, 능력 범위가 소리 없이 넓어지는데 diff는
+// 무해한 작은 함수처럼 보이게 된다.
 
-// TestTemplateContextHasNoMethods 是最重要的一条。
+// TestTemplateContextHasNoMethods가 가장 중요하다.
 //
-// text/template 会调用导出方法（{{.Foo}} 既能取字段也能调方法）。所以模板上下文
-// 只要能接触到**任何**带导出方法的类型，就等于把那些方法暴露给了模板作者。
-// 本功能的上下文刻意全是纯数据（只有导出字段、零方法）。
+// text/template는 exported 메서드를 호출할 수 있다({{.Foo}}는 필드도 가져오고 메서드도 호출할 수 있다). 따라서 템플릿 컨텍스트가
+// exported 메서드를 가진 **어떤** 타입에라도 닿기만 하면, 그 메서드들이 템플릿 작성자에게 노출된다.
+// 이 기능의 컨텍스트는 의도적으로 순수 데이터만 사용한다(exported 필드만 있고 메서드는 없음).
 //
-// 若这条失败：说明有人给 webhookTemplateData / webhookItem 加了方法。
-// 在决定放行之前，先想清楚那个方法能不能被模板用来读取不希望暴露的东西。
+// 이 단언이 실패하면 누군가 webhookTemplateData / webhookItem에 메서드를 추가했다는 뜻이다.
+// 허용하기 전에, 그 메서드를 템플릿이 노출하고 싶지 않은 무언가를 읽는 데 쓸 수 있는지 먼저 따져 보라.
 func TestTemplateContextHasNoMethods(t *testing.T) {
 	for _, v := range []any{webhookTemplateData{}, webhookItem{}} {
 		typ := reflect.TypeOf(v)
@@ -37,10 +37,10 @@ func TestTemplateContextHasNoMethods(t *testing.T) {
 	}
 }
 
-// TestTemplateFuncsAreMinimal 锁住暴露给模板的函数集合。
+// TestTemplateFuncsAreMinimal은 템플릿에 노출되는 함수 집합을 고정한다.
 //
-// FuncMap 里每多一个函数就多一项能力。当前只有 json / jsons，作用是把值序列化
-// 成 JSON 片段——不能读文件、不能发请求、不能执行命令。
+// FuncMap에 함수가 하나 추가될 때마다 능력도 하나 늘어난다. 현재는 json / jsons뿐이며, 그 역할은 값을 JSON 조각으로
+// 직렬화하는 것이다. 파일을 읽거나, 요청을 보내거나, 명령을 실행할 수 없다.
 func TestTemplateFuncsAreMinimal(t *testing.T) {
 	var got []string
 	for name := range webhookTemplateFuncs {
@@ -54,14 +54,14 @@ func TestTemplateFuncsAreMinimal(t *testing.T) {
 	}
 }
 
-// TestTemplateCannotReachUnknownData 覆盖模板里的越界访问：
-// 访问不存在的东西必须失败，而不是回显点什么；且失败信息不得带出内部数据。
+// TestTemplateCannotReachUnknownData는 템플릿의 범위 밖 접근을 다룬다:
+// 존재하지 않는 것에 접근하면 반드시 실패해야 하며, 무언가를 에코해서는 안 된다. 실패 메시지도 내부 데이터를 드러내면 안 된다.
 func TestTemplateCannotReachUnknownData(t *testing.T) {
 	_, err := renderWebhookBody(`{"x": {{.Environment}}, "y": {{.Env}}}`, singleMsg())
 	if err == nil {
 		t.Fatal("访问不存在的字段应报错")
 	}
-	// 错误里不能出现模板上下文里的真实内容（漏洞标题/摘要）。
+	// 오류에는 템플릿 컨텍스트의 실제 내용(취약점 제목/요약)이 나타나면 안 된다.
 	for _, leak := range []string{"SQL注入", "参数 id"} {
 		if strings.Contains(err.Error(), leak) {
 			t.Errorf("模板错误泄露了消息内容 %q: %v", leak, err)
@@ -69,8 +69,8 @@ func TestTemplateCannotReachUnknownData(t *testing.T) {
 	}
 }
 
-// TestTemplateRenderFailsPermanently 模板写错属于配置错误，重试不会自愈。
-// 若被判成可重试，一条坏模板会让每次投递都白跑三轮退避。
+// TestTemplateRenderFailsPermanently: 템플릿 작성 오류는 설정 오류에 해당하며, 재시도로 자동 복구되지 않는다.
+// 재시도 가능으로 판정되면, 잘못된 템플릿 하나 때문에 모든 발송이 세 라운드의 백오프를 헛되이 반복하게 된다.
 func TestTemplateRenderFailsPermanently(t *testing.T) {
 	cfg := map[string]any{
 		"url":           "https://example.com/hook",
@@ -79,22 +79,22 @@ func TestTemplateRenderFailsPermanently(t *testing.T) {
 	if err := (webhookChannel{}).Validate(cfg); err == nil {
 		t.Fatal("模板语法错误应在保存时就被拦下")
 	}
-	// 即便绕过校验直接投递，也必须判永久失败而不是反复重试。
+	// 검증을 우회해 직접 발송하더라도, 반복 재시도가 아니라 영구 실패로 판정해야 한다.
 	_, err := (webhookChannel{}).Send(context.Background(), cfg, singleMsg())
 	if err == nil || !IsPermanent(err) {
 		t.Fatalf("坏模板应判永久失败，得到 %v", err)
 	}
 }
 
-// TestTemplateCanOnlyProduceJSON 覆盖「模板渲染结果必须是合法 JSON」这条约束。
-// 它顺带挡住了「用模板生成纯文本去触发别的协议」这类用法。
+// TestTemplateCanOnlyProduceJSON은 '템플릿 렌더링 결과는 반드시 유효한 JSON이어야 한다'는 제약을 다룬다.
+// 이는 '템플릿으로 순수 텍스트를 생성해서 다른 프로토콜을 유발하는' 용법도 함께 차단한다.
 func TestTemplateCanOnlyProduceJSON(t *testing.T) {
-	// 合法模板能过。
+	// 유효한 템플릿은 통과해야 한다.
 	ok := map[string]any{"url": "https://example.com/hook", "body_template": `{"t":{{json .Title}}}`}
 	if err := (webhookChannel{}).Validate(ok); err != nil {
 		t.Fatalf("合法模板应通过校验: %v", err)
 	}
-	// 渲染出非 JSON 时必须拒绝（而不是原样发出去）。
+	// JSON이 아닌 결과를 렌더링하면 (그대로 보내는 대신) 반드시 거부해야 한다.
 	bad := map[string]any{"url": "http://127.0.0.1:1/hook", "body_template": `not json {{.Count}}`}
 	_, err := (webhookChannel{}).Send(context.Background(), bad, singleMsg())
 	if err == nil || !IsPermanent(err) {

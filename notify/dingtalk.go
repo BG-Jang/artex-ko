@@ -14,25 +14,25 @@ import (
 	"time"
 )
 
-// dingTalkChannel 实现钉钉自定义机器人。
+// dingTalkChannel은 딩톡 사용자 정의 로봇을 구현한다.
 //
-// 平台特性（决定了这里的实现取舍）：
-//   - 单机器人限流 20 条/分钟，超发会被静默丢弃（HTTP 仍可能 200），
-//     所以限流必须在客户端做，见 DefaultRatePerMin。
-//   - 安全设置三选一：加签 / 自定义关键词 / IP 白名单。加签是唯一不依赖
-//     消息内容的方案，所以只支持加签（也支持三者都不开的裸 webhook）。
-//   - 成功/失败都返回 HTTP 200，靠 body 里的 errcode 区分——不检查 errcode
-//     会把投递失败记成成功。
+// 플랫폼 특성(아래 구현의 선택을 결정한다):
+//   - 단일 로봇의 제한은 분당 20건이며, 초과 전송은 조용히 버려진다(HTTP는 여전히 200일 수 있다).
+//     따라서 제한은 클라이언트에서 해야 한다. DefaultRatePerMin을 참고하라.
+//   - 보안 설정은 세 가지 중 하나를 고른다: 서명 / 사용자 정의 키워드 / IP 화이트리스트.
+//     서명은 메시지 내용에 의존하지 않는 유일한 방식이므로, 서명만 지원한다(세 가지를 모두 끈 순수 webhook도 지원한다).
+//   - 성공/실패 모두 HTTP 200을 반환하며, 본문의 errcode로 구분한다. errcode를 확인하지 않으면
+//     전달 실패를 성공으로 기록하게 된다.
 type dingTalkChannel struct{}
 
 func (dingTalkChannel) Kind() string { return KindDingTalk }
 
 func (dingTalkChannel) DefaultRatePerMin() int { return 20 }
 
-// 钉钉的 Webhook 地址里带 access_token，本身就是凭据，因此整体掩码。
+// 딩톡의 Webhook 주소에는 access_token이 들어 있어 그 자체가 자격 증명이므로, 전체를 마스킹한다.
 func (dingTalkChannel) SecretKeys() []string { return []string{"webhook", "secret"} }
 
-// 目标是钉钉的 Webhook 地址本身；改地址必须同时对新地址重新表态加签密钥。
+// 목적지는 딩톡 Webhook 주소 자체이며, 주소를 바꾸면 새 주소에 대해서도 서명 키를 다시 명시해야 한다.
 func (dingTalkChannel) DestinationKeys() []string { return []string{"webhook"} }
 
 func (dingTalkChannel) Validate(cfg map[string]any) error {
@@ -46,7 +46,7 @@ func (dingTalkChannel) Validate(cfg map[string]any) error {
 	return nil
 }
 
-// Send 投递一次消息。有回链且是单条时用 ActionCard（带按钮），否则用 markdown。
+// Send는 메시지를 한 번 전달한다. 상세 링크가 있고 단건일 때는 ActionCard(버튼 포함)를, 그 밖에는 markdown을 쓴다.
 func (c dingTalkChannel) Send(ctx context.Context, cfg map[string]any, m Message) (int, error) {
 	hook := cfgString(cfg, "webhook")
 	if err := c.Validate(cfg); err != nil {
@@ -58,7 +58,7 @@ func (c dingTalkChannel) Send(ctx context.Context, cfg map[string]any, m Message
 	}
 
 	title := markdownTitle(m)
-	// 钉钉 markdown 正文无明确字节上限，但仍做上限保护，避免证据字段异常膨胀。
+	// 딩톡 markdown 본문에는 명시적인 바이트 상한이 없지만, 증거 필드가 비정상적으로 커지는 것을 막기 위해 상한을 둔다.
 	text, kept := markdownBody(m, 20000)
 
 	var payload any
@@ -84,7 +84,7 @@ func (c dingTalkChannel) Send(ctx context.Context, cfg map[string]any, m Message
 	if err != nil {
 		return 0, err
 	}
-	// 钉钉把业务错误藏在 200 响应里。
+	// 딩톡은 업무 오류를 200 응답 안에 숨긴다.
 	var res struct {
 		ErrCode int    `json:"errcode"`
 		ErrMsg  string `json:"errmsg"`
@@ -93,18 +93,18 @@ func (c dingTalkChannel) Send(ctx context.Context, cfg map[string]any, m Message
 		return 0, fmt.Errorf("DingTalk 응답을 해석하지 못했습니다: %w (%s)", err, snippet(raw))
 	}
 	if res.ErrCode != 0 {
-		// 301000 是签名校验失败、310000 是关键词不匹配——都是配置错误，
-		// 重试不会自愈。
+		// 301000은 서명 검증 실패, 310000은 키워드 불일치이다. 둘 다 설정 오류이므로,
+		// 재시도해도 저절로 회복되지 않는다.
 		return 0, Permanent(fmt.Errorf("DingTalk에서 오류가 발생했습니다 (%d): %s", res.ErrCode, res.ErrMsg))
 	}
 	return kept, nil
 }
 
-// dingTalkSignedURL 按官方加签规则给 webhook 追加 timestamp 与 sign 参数。
+// dingTalkSignedURL은 공식 서명 규칙에 따라 webhook에 timestamp와 sign 매개변수를 덧붙인다.
 //
-// 规则：待签串 = timestamp + "\n" + secret，HMAC-SHA256 的**密钥也是 secret**，
-// 结果 base64 后 URL 编码。timestamp 是毫秒。secret 为空时原样返回，
-// 以支持未开启加签的机器人。
+// 규칙: 서명 대상 문자열 = timestamp + "\n" + secret이며, HMAC-SHA256의 **키도 secret**이다.
+// 결과는 base64 인코딩 후 URL 인코딩한다. timestamp는 밀리초이다. secret이 비어 있으면 그대로 반환하며,
+// 서명을 켜지 않은 로봇을 지원하기 위함이다.
 func dingTalkSignedURL(hook, secret string, now time.Time) (string, error) {
 	if secret == "" {
 		return hook, nil
@@ -116,7 +116,7 @@ func dingTalkSignedURL(hook, secret string, now time.Time) (string, error) {
 
 	u, err := url.Parse(hook)
 	if err != nil {
-		// 不透传 err：url.Parse 的错误文本里带完整地址（含 access_token）。
+		// err를 그대로 전달하지 않는다. url.Parse의 오류 문자열에는 전체 주소(access_token 포함)가 들어 있다.
 		return "", fmt.Errorf("Webhook 주소를 해석하지 못했습니다: %s", redactRequestTarget(hook))
 	}
 	q := u.Query()
@@ -126,22 +126,22 @@ func dingTalkSignedURL(hook, secret string, now time.Time) (string, error) {
 	return u.String(), nil
 }
 
-// validateHTTPURL 校验地址可用、协议受支持，并对字面 IP 目标做内网判断。
+// validateHTTPURL은 주소가 사용 가능하고 프로토콜이 지원되는지 검증하며, 리터럴 IP 대상에 대해서는 내부망 여부를 판단한다.
 //
-// 两点讲究：
+// 두 가지를 신경 써서 처리한다.
 //
-//  1. **错误信息必须脱敏**。url.Parse 自己返回的是 *url.Error，它的 Error() 带
-//     **完整原始地址**，而本功能这几家的地址里就嵌着凭据（钉钉 access_token、
-//     企微 key、Telegram 的 bot token、飞书 hook id）。曾经这里直接 `return err`，
-//     于是「地址格式非法」这条错误就把凭据带了出去，流向测试接口的 400 响应、
-//     每次投递落库的 last_error、服务端日志与投递历史接口。
+//  1. **오류 정보는 반드시 마스킹해야 한다.** url.Parse가 직접 반환하는 것은 *url.Error이며, 그 Error()에는
+//     **원래 주소 전체**가 들어 있다. 이 기능의 해당 서비스 주소에는 자격 증명이 들어 있다(딩톡 access_token,
+//     기업 위챗 key, Telegram bot token, 페이슈 hook id). 과거에는 여기서 `return err`를 그대로 했고,
+//     「주소 형식이 잘못됨」 오류가 자격 증명을 실어 테스트 API의 400 응답, 매 전달마다 DB에 기록되는 last_error,
+//     서버 로그, 전달 이력 API로 흘러갔다.
 //
-//  2. **字面 IP 直接判内网**，域名留给拨号阶段判（blockInternalDial 才是最终
-//     生效点，也能覆盖 DNS 重绑定）。这里做一次是为了让保存配置时就能得到提示，
-//     而不是等到第一次投递失败。
+//  2. **리터럴 IP는 여기서 내부망 여부를 바로 판단하고, 도메인은 다이얼 단계에 맡긴다**(blockInternalDial이
+//     최종 적용 지점이며 DNS 리바인딩도 막는다). 여기서 한 번 검사하는 이유는, 첫 전달이 실패할 때까지 기다리지 않고
+//     설정을 저장할 때 바로 안내를 받기 위해서다.
 //
-// 限制协议是防御性的：file:///gopher:// 之类会让 http.Client 产生意料之外的
-// 行为（虽已被 scheme 检查挡下，但没有理由放开这个面）。
+// 프로토콜을 제한하는 것은 방어적 조치이다. file:///gopher:// 같은 주소는 http.Client에서 예기치 않은 동작을 일으킬 수 있다.
+// scheme 검사로 막혀 있지만, 이 표면을 열어 둘 이유는 없다.
 func validateHTTPURL(raw string) error {
 	u, err := url.Parse(raw)
 	if err != nil {

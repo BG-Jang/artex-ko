@@ -54,7 +54,7 @@ func TestSkillRelPath(t *testing.T) {
 	bad := []string{
 		"", "../etc/passwd", "a/../../b", "/abs/path", "a//b", `..\..\x`,
 		"%2e%2e/x", "a\x00b", "中文 名.md", "中‮文.md", "a#b.md", "a?b.md",
-		"a:b.md", string([]byte{0xd6, 0xd0}) + ".md", // 裸 GBK 字节：非法 UTF-8
+		"a:b.md", string([]byte{0xd6, 0xd0}) + ".md", // 가공되지 않은 GBK 바이트: 잘못된 UTF-8
 		strings.Repeat("a", maxSkillPathLen+1),
 	}
 	for _, in := range bad {
@@ -73,7 +73,7 @@ type zipFile struct {
 	name    string
 	body    string
 	method  uint16
-	nonUTF8 bool // write the name bytes as-is (GBK 包)
+	nonUTF8 bool // 이름 바이트를 그대로 기록한다 (GBK 인코딩 항목)
 }
 
 func buildZip(t *testing.T, files ...zipFile) []byte {
@@ -81,8 +81,8 @@ func buildZip(t *testing.T, files ...zipFile) []byte {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
 	zw.RegisterCompressor(zipMethodZstd, zstd.ZipCompressor())
-	// Deflate64 没有纯 Go 编码器；这里原样写入，只是为了给条目打上 method 9 的标记 ——
-	// 断言的是「方法不支持时给什么提示」，不会真去解压它。
+	// Deflate64 는 순수 Go 인코더가 없어서, 여기서는 항목에 method 9 표시만 남기려고 그대로 기록한다 ——
+	// 검증하는 것은 「메서드가 지원되지 않을 때 어떤 안내를 주는가」이며, 실제로 압축을 풀지는 않는다.
 	zw.RegisterCompressor(zipMethodDeflate64, func(w io.Writer) (io.WriteCloser, error) {
 		return nopWriteCloser{w}, nil
 	})
@@ -128,8 +128,8 @@ func uploadZip(t *testing.T, skillDir string, filename string, data []byte) (*ht
 
 const zhSkillMD = "---\nname: 中文技能\ndescription: 测试\n---\n正文\n"
 
-// A zstd-compressed archive (WinZip 的可选压缩方式) used to blow up with
-// "zip: unsupported compression"; it now installs like any Deflate archive.
+// zstd 압축 아카이브(WinZip 의 선택적 압축 방식)는 예전에
+// "zip: unsupported compression" 으로 실패했지만, 이제는 다른 Deflate 아카이브와 똑같이 설치된다.
 func TestUploadSkillZstdAndChineseNames(t *testing.T) {
 	dir := t.TempDir()
 	data := buildZip(t,
@@ -151,8 +151,8 @@ func TestUploadSkillZstdAndChineseNames(t *testing.T) {
 	}
 }
 
-// GBK-named entries (7-Zip / 资源管理器 on Chinese Windows) must be decoded rather
-// than rejected as invalid UTF-8 paths.
+// GBK 이름 항목(중국어 Windows 의 7-Zip / 탐색기가 만든 것)은 잘못된 UTF-8 경로로 거부하지 말고
+// 디코딩해야 한다.
 func TestUploadSkillGBKNames(t *testing.T) {
 	gbk := func(s string) string {
 		b, err := simplifiedchinese.GBK.NewEncoder().String(s)

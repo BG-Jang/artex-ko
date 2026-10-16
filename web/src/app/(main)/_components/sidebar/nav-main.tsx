@@ -94,7 +94,7 @@ const GROUP_MESSAGE_KEY: Record<number, string> = { 1: "function", 2: "system" }
 export function NavMain({ items }: NavMainProps) {
   const t = useTranslations("nav");
   const rawPath = usePathname();
-  // 路由段含中文，pathname 可能是百分号编码，解码后再与导航 url 比较，保证高亮命中。
+  // 라우트 세그먼트에 중국어가 포함될 수 있어 pathname 이 퍼센트 인코딩될 수 있으므로, 디코딩한 뒤 내비게이션 url 과 비교하여 하이라이트가 맞도록 합니다.
   const path = (() => {
     try {
       return decodeURIComponent(rawPath);

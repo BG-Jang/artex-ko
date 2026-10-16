@@ -33,10 +33,10 @@ import { cn } from "@/lib/utils";
 
 import { ProfileRetryFields, RetryPolicyPanel, ZERO_OVERRIDE } from "./_components/retry";
 
-// 思考开关(thinking.type)与思考强度(reasoning_effort)是两个【互相独立】的字段，
-// 各自单独设置——有些接口没有 thinking 字段、只靠强度参数就能激活思考，故需解耦。
-// 存库空字符串 = 该字段【不发送】；Radix Select 不接受空 value，故 UI 用 "none"
-// 哨兵表示不发送，存取时与 "" 互转（NONE / fromStore / toStore）。
+// 사고 스위치(thinking.type)와 사고 강도(reasoning_effort)는 서로 【독립적인】 두 필드이며,
+// 각각 따로 설정한다. 일부 인터페이스에는 thinking 필드가 없고 강도 파라미터만으로 사고가 활성화되므로 분리해야 한다.
+// DB에 저장된 빈 문자열 = 해당 필드를 【보내지 않음】. Radix Select는 빈 value를 받지 않으므로, UI는 "none"
+// 센티넬로 「보내지 않음」을 나타내고, 저장/로드 시 ""와 상호 변환한다(NONE / fromStore / toStore).
 const NONE = "none";
 const fromStore = (v?: string) => (v ? v : NONE);
 const toStore = (v: string) => (v === NONE ? "" : v);
@@ -47,13 +47,13 @@ function cooldownText(secs: number) {
   return `${Math.ceil(secs / 60)}min`;
 }
 
-// 一个配置在卡片上显示的「是否正常」。没填 Key 的配置根本发不出请求，比熔断更该先说；
-// 其余状态来自轮询的熔断记录（轮询关着时不会产生新记录，此时「正常」= 没有已知故障）。
-// 文案走 i18n（llmPage.health.*），所以把 t 传进来由调用方注入。
+// 설정 카드에 표시되는 「정상 여부」. Key를 입력하지 않은 설정은 요청 자체를 보낼 수 없으므로, 서킷 브레이커보다 먼저 알려야 한다.
+// 나머지 상태는 폴링으로 얻은 서킷 브레이커 기록에서 온다(폴링이 꺼져 있으면 새 기록이 생기지 않으며, 이때 「정상」 = 알려진 장애가 없음을 뜻한다).
+// 문구는 i18n(llmPage.health.*)을 쓰므로, t는 호출자가 주입한다.
 type Health = { label: string; cls: string; hint?: string };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 轮询配置抽屉
+// 폴링 설정 드로어
 // ─────────────────────────────────────────────────────────────────────────────
 
 function PoolSheet({
@@ -70,7 +70,7 @@ function PoolSheet({
   const t = useTranslations("llmPage");
   const [busy, setBusy] = React.useState(false);
 
-  // 冷却倒计时是后端算出的剩余秒数——抽屉开着且有配置不正常时才定时拉，让它走起来。
+  // 쿨다운 카운트다운은 백엔드가 계산한 남은 초 수다. 드로어가 열려 있고 비정상 설정이 있을 때만 주기적으로 불러와서 카운트다운이 움직이게 한다.
   React.useEffect(() => {
     if (!open || !pool?.enabled || !pool.chain.some((m) => m.state !== "ok")) return;
     const t = setInterval(() => void onReload(), 10_000);
@@ -107,7 +107,7 @@ function PoolSheet({
 
   const enabled = pool?.enabled ?? false;
   const chain = pool?.chain ?? [];
-  // 参与轮询的成员（排除被标记「不参与轮询」的），顺序即后端实际的尝试顺序。
+  // 폴링에 참여하는 멤버(「폴링 제외」로 표시된 것은 뺀다). 순서는 백엔드가 실제로 시도하는 순서와 같다.
   const inChain = chain.filter((m) => m.active || !m.excluded);
   const tripped = chain.filter((m) => m.state === "tripped");
 
@@ -243,7 +243,7 @@ function PoolSheet({
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 模型配置抽屉（新建 / 编辑共用同一套表单）
+// 모델 설정 드로어(신규 / 편집이 같은 폼을 공유한다)
 // ─────────────────────────────────────────────────────────────────────────────
 
 function ProfileSheet({
@@ -252,7 +252,7 @@ function ProfileSheet({
   onOpenChange,
   onSaved,
 }: {
-  profile: LLMProfile | null; // null = 新建
+  profile: LLMProfile | null; // null = 신규
   open: boolean;
   onOpenChange: (o: boolean) => void;
   onSaved: (id: string) => void;
@@ -268,23 +268,23 @@ function ProfileSheet({
   const [keyHint, setKeyHint] = React.useState("");
   const [rps, setRps] = React.useState("0");
   const [rpm, setRpm] = React.useState("0");
-  const [cw, setCw] = React.useState("0"); // 上下文窗口(K tokens);0=默认200K
+  const [cw, setCw] = React.useState("0"); // 컨텍스트 윈도우(K tokens); 0=기본 200K
   const [thinkingType, setThinkingType] = React.useState(NONE);
   const [effort, setEffort] = React.useState(NONE);
-  const [priority, setPriority] = React.useState("0"); // 轮询顺位;越大越先
+  const [priority, setPriority] = React.useState("0"); // 폴링 순위; 클수록 먼저
   const [poolExclude, setPoolExclude] = React.useState(false);
-  const [streaming, setStreaming] = React.useState(true); // true=流式(默认);false=非流式
-  const [maxTokens, setMaxTokens] = React.useState("0"); // 单次回复输出上限;0=不发送
-  const [maxTokensField, setMaxTokensField] = React.useState(NONE); // 上限用哪个字段名;NONE=max_tokens
-  const [sessionHeaderKey, setSessionHeaderKey] = React.useState(""); // 自定义会话头名;空=不发送
-  const [retry, setRetry] = React.useState<LLMRetryOverride>(ZERO_OVERRIDE); // 本配置的重试覆盖;全 0=跟随全局
+  const [streaming, setStreaming] = React.useState(true); // true=스트리밍(기본); false=비스트리밍
+  const [maxTokens, setMaxTokens] = React.useState("0"); // 단일 응답 출력 상한; 0=보내지 않음
+  const [maxTokensField, setMaxTokensField] = React.useState(NONE); // 상한에 사용할 필드 이름; NONE=max_tokens
+  const [sessionHeaderKey, setSessionHeaderKey] = React.useState(""); // 사용자 지정 세션 헤더 이름; 빈 값=보내지 않음
+  const [retry, setRetry] = React.useState<LLMRetryOverride>(ZERO_OVERRIDE); // 이 설정의 재시도 덮어쓰기; 전부 0=전역 설정 따름
   const [testing, setTesting] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
   const [models, setModels] = React.useState<string[]>([]);
   const [loadingModels, setLoadingModels] = React.useState(false);
   const [modelsOpen, setModelsOpen] = React.useState(false);
 
-  // 思考开关 / 上限字段名 / 思考强度三组选项的标签走 i18n，故在组件内按当前语言构造。
+  // 사고 스위치 / 상한 필드 이름 / 사고 강도 세 그룹 옵션의 라벨은 i18n을 쓰므로, 컴포넌트 안에서 현재 언어에 맞춰 만든다.
   const THINKING_TYPES: { value: string; label: string }[] = [
     { value: NONE, label: t("profile.thinkingType.opt.none") },
     { value: "disabled", label: t("profile.thinkingType.opt.disabled") },
@@ -303,8 +303,8 @@ function ProfileSheet({
     { value: "max", label: "max" },
   ];
 
-  // 每次打开时从传入的 profile 灌一遍表单（新建则重置为默认值）。抽屉关掉再打开
-  // 就是一次干净的开始，不会留下上一个配置的残影。
+  // 열 때마다 전달받은 profile로 폼을 한 번 채운다(신규면 기본값으로 초기화). 드로어를 닫았다가 다시 열면
+  // 깨끗하게 새로 시작하며, 이전 설정의 잔상이 남지 않는다.
   React.useEffect(() => {
     if (!open) return;
     setName(profile?.name ?? "");
@@ -356,8 +356,8 @@ function ProfileSheet({
     if (testing) return;
     setTesting(true);
     try {
-      // 用配置实际会跑的思考参数来测，这样不支持该字段的模型在这里就失败，
-      // 而不是等到跑任务时才炸。传 profile id：Key 输入框留空时用已存的 Key。
+      // 설정이 실제로 사용할 사고 파라미터로 테스트한다. 그래야 해당 필드를 지원하지 않는 모델은 여기서 실패하고,
+      // 작업을 실행할 때 터지지 않는다. profile id를 넘기면, Key 입력창이 비어 있을 때 저장된 Key를 쓴다.
       const r = await api.testLLM(
         format,
         model,
@@ -370,7 +370,7 @@ function ProfileSheet({
         streaming,
         sessionHeaderKey.trim(),
       );
-      // 回复内容一并展示：看得见模型确实说了话，才算和会话里跑通是一回事。
+      // 응답 내용도 함께 보여준다: 모델이 실제로 응답했는지 눈으로 확인해야, 세션에서 실행되는 것과 같은 일이라고 볼 수 있다.
       if (r.ok)
         toast.success(t("profile.toast.testOk", { latency: r.latency_ms ?? "?", model: r.model ?? model }), {
           description: r.reply ? t("profile.toast.testReply", { reply: r.reply }) : undefined,
@@ -408,8 +408,8 @@ function ProfileSheet({
         pool_exclude: poolExclude,
         streaming,
         max_tokens: Math.max(0, Number(maxTokens) || 0),
-        // 字段名开关只对 openai(Chat Completions) 有意义，其它格式一律回落到默认；
-        // 后端也会再做一次同样的归一化，这里只是别让 UI 送出自相矛盾的值。
+        // 필드 이름 스위치는 openai(Chat Completions)에만 의미가 있으며, 다른 형식은 모두 기본값으로 되돌린다.
+        // 백엔드도 같은 정규화를 한 번 더 하므로, 여기서는 UI가 모순된 값을 보내지 않게 할 뿐이다.
         max_tokens_field: format === "openai" ? toStore(maxTokensField) : "",
         session_header_key: sessionHeaderKey.trim(),
         retry,
@@ -479,8 +479,8 @@ function ProfileSheet({
                 value={model}
                 onChange={(e) => setModel(e.target.value)}
               />
-              {/* modal: 这个 Popover 的内容被 portal 到 <body>，在 Sheet 的滚动锁之外，
-                  不加 modal 时列表能渲染却滚不动。modal 让它自己持有最上层滚动锁。 */}
+              {/* modal: 이 Popover의 내용은 <body>로 portal되어 Sheet의 스크롤 잠금 바깥에 있으므로,
+                  modal을 주지 않으면 목록은 렌더링되지만 스크롤이 되지 않는다. modal을 주면 스스로 최상위 스크롤 잠금을 가진다. */}
               <Popover open={modelsOpen} onOpenChange={setModelsOpen} modal>
                 <PopoverTrigger asChild>
                   <Button
@@ -727,8 +727,8 @@ export default function LLMPage() {
   const [profiles, setProfiles] = React.useState<LLMProfile[]>([]);
   const [pool, setPool] = React.useState<LLMPoolStatus | null>(null);
   const [poolOpen, setPoolOpen] = React.useState(false);
-  // 抽屉的开关和内容分开存：关闭时 editing 保持不变，否则关闭动画期间标题会从
-  // 「编辑 X」闪成「新建」。editing = null 表示新建。
+  // 드로어의 열림 상태와 내용은 따로 저장한다: 닫을 때 editing을 유지해야 하며, 그렇지 않으면 닫힘 애니메이션 중에 제목이
+  // 「X 편집」에서 「신규」로 깜빡인다. editing = null이면 신규를 뜻한다.
   const [editOpen, setEditOpen] = React.useState(false);
   const [editing, setEditing] = React.useState<LLMProfile | null>(null);
   const openEditor = React.useCallback((p: LLMProfile | null) => {
@@ -736,7 +736,7 @@ export default function LLMPage() {
     setEditOpen(true);
   }, []);
 
-  // 一个配置在卡片上显示的「是否正常」。没填 Key 的配置根本发不出请求，比熔断更该先说。
+  // 설정 카드에 표시되는 「정상 여부」. Key를 입력하지 않은 설정은 요청 자체를 보낼 수 없으므로, 서킷 브레이커보다 먼저 알려야 한다.
   const healthOf = React.useCallback(
     (p: LLMProfile, m?: LLMPoolMember): Health => {
       if (!p.api_key_hint) {
@@ -789,7 +789,7 @@ export default function LLMPage() {
     void load();
   }, [load]);
 
-  // 卡片上的健康徽章按 profile id 取轮询状态。
+  // 카드의 상태 배지는 profile id로 폴링 상태를 가져온다.
   const health = React.useMemo(() => {
     const m = new Map<string, LLMPoolMember>();
     for (const c of pool?.chain ?? []) m.set(c.profile_id, c);
@@ -855,7 +855,7 @@ export default function LLMPage() {
             {profiles.map((p) => {
               const h = healthOf(p, health.get(p.id));
               return (
-                // biome-ignore lint/a11y/useSemanticElements: 卡片内含自己的操作按钮，用原生 <button> 会造成按钮嵌套（非法 HTML）
+                // biome-ignore lint/a11y/useSemanticElements: 카드 안에 자체 조작 버튼이 있어서, 네이티브 <button>을 쓰면 버튼이 중첩되어 버린다(잘못된 HTML)
                 <Card
                   key={p.id}
                   role="button"
@@ -907,7 +907,7 @@ export default function LLMPage() {
                           })}
                         </span>
                       )}
-                      {/* 轮询相关的两个字段只在轮询开着时才有意义，关着时不占版面 */}
+                      {/* 폴링과 관련된 두 필드는 폴링이 켜져 있을 때만 의미가 있으므로, 꺼져 있을 때는 공간을 차지하지 않는다 */}
                       {poolOn &&
                         !p.is_default &&
                         (p.pool_exclude ? (

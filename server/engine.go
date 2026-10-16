@@ -64,13 +64,13 @@ func preview(s string, n int) string {
 	return string(r)
 }
 
-// model_error（provider/API 故障：LLM 层瞬时重试耗尽，或流已开始后中途断流）
-// 收场的 work 不是「试过没做完」也不是真失败，而是外部抖动。默认把它当永久
-// blocked 会白丢一条意图，所以这里对该终态额外重跑几次，每次之间退避一下，给
-// provider 恢复的时间；重试期间若被暂停/终止/取消则立即让位给对应分支处理。
+// model_error(provider/API 장애: LLM 계층의 일시적 재시도가 소진되었거나, 스트림 시작 후 중간에 끊긴 경우)
+// 종료된 work 는 「시도했지만 끝나지 않음」도 실제 실패도 아니며 외부 요동이다. 기본값으로 이를 영구
+// blocked 로 처리하면 의도 하나가 무의미하게 버려지므로, 이 종료 상태에 대해 몇 차례 추가로 재실행하며 매번 사이에 백오프를 두어 줘
+// provider 가 회복할 시간을 준다. 재시도 중 일시정지/종료/취소되면 즉시 해당 분기 처리에 양보한다.
 const (
-	modelErrorRetries      = 2               // model_error 收场后额外重试的次数
-	modelErrorRetryBackoff = 3 * time.Second // 每次重试前的退避
+	modelErrorRetries      = 2               // model_error 종료 후 추가로 재시도하는 횟수
+	modelErrorRetryBackoff = 3 * time.Second // 재시도 전 매번의 백오프
 	workControlWaitTimeout = 30 * time.Second
 )
 
@@ -152,12 +152,12 @@ type Engine struct {
 
 	plannerRound sync.Map // taskID -> int, planner round counter (for UI round separators)
 
-	// 任务级超时(见 docs/任务级超时与收尾设计.md):
-	settling     sync.Map // taskID -> bool, 任务已进入收尾时序(停止派/领新意图)
-	deadline     sync.Map // taskID -> int64 unix, 绝对截止时刻(首次运行时盖章;0/缺省=不限)
-	stamped      sync.Map // taskID -> bool, first_run_at 是否已盖章(本进程内只盖一次)
-	inflight     sync.Map // taskID -> *int64, 在跑的 planner.Plan + worker.Execute 计数(用于 drain)
-	coordStarted sync.Map // taskID -> bool, deadline 协调器是否已启动(Run/reload 去重)
+	// 태스크 단위 타임아웃(docs/任务级超时与收尾设计.md 참조):
+	settling     sync.Map // taskID -> bool, 태스크가 마무리 절차에 진입함(새 의도 배정/수령 중지)
+	deadline     sync.Map // taskID -> int64 unix, 절대 마감 시각(첫 실행 시 스탬프 기록; 0/미설정=제한 없음)
+	stamped      sync.Map // taskID -> bool, first_run_at 스탬프 기록 여부(프로세스 내에서 한 번만 기록)
+	inflight     sync.Map // taskID -> *int64, 실행 중인 planner.Plan + worker.Execute 카운트(drain 용)
+	coordStarted sync.Map // taskID -> bool, deadline 코디네이터 시작 여부(Run/reload 중복 방지)
 
 	// resolve returns a task's dedicated planner/worker (wired by the server as the
 	// authoritative task-router). nil,nil means this task is deliberately unavailable
@@ -549,38 +549,38 @@ func (e *Engine) drainSteer(intentID int64) (string, bool) {
 // before each tool call it drains a queued course-correction (if any) and blocks the
 // call, handing the message back to the model — which re-plans its next step instead
 // of running the tool. No queued message → the guard behaves exactly as before.
-// 它同时负责「空转回合」的续跑，见 Stop。
+// 이 구조체는 「공회전 턴」의 이어가기도 함께 담당한다. 자세한 내용은 Stop 참조.
 type steerHooks struct {
 	inner harness.HookRunner
 	drain func() (string, bool)
-	// nudges 是本条意图已注入的空转续跑次数，上限 limit。指针:harness 持有的是
-	// steerHooks 的值拷贝，计数必须共享同一份。
+	// nudges 는 이 의도에 이미 주입된 공회전 이어가기 횟수이며 상한은 limit이다. 포인터인 이유: harness 가 보유하는 것은
+	// steerHooks 의 값 복사본이므로, 카운트는 반드시 같은 것을 공유해야 한다.
 	nudges *atomic.Int64
-	// limit 是空转续跑的次数上限，由 Engine.emptyTurnNudgeLimit() 从「空响应重试
-	// 次数」解析而来。<=0 = 不介入(用户显式关掉了这层)。
+	// limit 은 공회전 이어가기의 횟수 상한이며, Engine.emptyTurnNudgeLimit() 이 「빈 응답 재시도
+	// 횟수」에서 해석한 값이다. <=0 = 개입하지 않음(사용자가 이 계층을 명시적으로 끈 경우).
 	limit int
-	// label 形如 "worker-1 · #42"，只用于日志。
+	// label 형식은 "worker-1 · #42" 이며 로그 용도로만 사용한다.
 	label string
 }
 
-// 空转回合(只有思考、既无正文也无工具调用)续跑次数的默认值，与 SDK 空响应重试的
-// 内置默认(norma/llm/openai.go 的 emptyResponseRetries)保持一致——两层共用同一个
-// 旋钮，不配置时的行为也该对齐。解析见 Engine.emptyTurnNudgeLimit。
+// 공회전 턴(생각만 있고 본문도 도구 호출도 없음)의 이어가기 횟수 기본값이며, SDK 빈 응답 재시도의
+// 내장 기본값(norma/llm/openai.go 의 emptyResponseRetries)과 일치시킨다. 두 계층이 같은 하나의
+// 노브를 공유하므로, 설정하지 않았을 때의 동작도 맞춰야 한다. 해석은 Engine.emptyTurnNudgeLimit 참조.
 //
-// 注意这个数是「一条意图的总量」，不是「连续几次」:harness 自身的 stopHookActive
-// 已经限死了连续空转只推一次——推完那一轮若还是空转，Stop 钩子不会再被调到，run 直接
-// 收场;只有真正发生过一次工具回合，配额才刷新(norma/harness/query.go:534)。所以这个
-// 闸挡的是「工具 → 空转 → 推 → 工具 → 空转」这种病态循环，别让它把意图预算耗光。
+// 주의: 이 수는 「의도 하나의 총량」이지 「연속 횟수」가 아니다. harness 자체의 stopHookActive 가
+// 이미 연속 공회전에 대해 한 번만 밀어 넣도록 제한해 두었다. 밀어 넣은 그 턴도 여전히 공회전이면 Stop 훅은 다시 호출되지 않고 run 은 바로
+// 종료된다. 실제로 도구 턴이 한 번 발생해야 할당량이 갱신된다(norma/harness/query.go:534). 그래서 이 게이트가
+// 막는 것은 「도구 → 공회전 → 밀어넣기 → 도구 → 공회전」 같은 병적 순환이며, 이것이 의도 예산을 모두 소모하지 않도록 해야 한다.
 const defaultEmptyTurnNudges = 2
 
-// emptyTurnNudge 是空转回合注入的续跑指令。
+// emptyTurnNudge 는 공회전 턴에 주입되는 이어가기 지시이다.
 //
-// 这种回合在 harness 眼里是一次自然结束(stop_reason=end_turn 且无 tool_use)，五层
-// LLM 重试一层都不适用——它不是错误，是模型「想完了但没动手」。SDK 的空响应重试也
-// 够不着:它以「有没有 yield 过事件」判空，而思考增量本身就是事件(norma/llm/openai.go
-// 的 SEThinkingDelta)，所以 thinking-only 不算空。何况那层是原样重发整个 prompt，
-// 对这种由上下文形状决定的空转，重发只会让模型再想一遍。这里换成追加一条指令，让它
-// 带着已经产出的思考继续，输入变了才有理由给出不同的行为。
+// 이런 턴은 harness 입장에서 자연스러운 종료이다(stop_reason=end_turn 이고 tool_use 없음). 다섯 계층의
+// LLM 재시도 중 어느 계층도 적용되지 않는다. 이는 오류가 아니라 모델이 「생각은 끝났지만 실행하지 않음」 상태다. SDK 의 빈 응답 재시도도
+// 닿지 않는다. 이는 「이벤트를 yield 했는지 여부」로 빈 응답을 판단하는데, 생각 증분 자체가 이벤트이기 때문이다(norma/llm/openai.go
+// 의 SEThinkingDelta). 따라서 thinking-only 는 빈 응답이 아니다. 게다가 그 계층은 프롬프트 전체를 그대로 재전송하므로,
+// 컨텍스트 형태에 의해 결정되는 이런 공회전에는 재전송이 모델에게 한 번 더 생각하게 할 뿐이다. 여기서는 지시 하나를 덧붙여 모델이
+// 이미 산출한 생각을 가지고 계속 진행하게 한다. 입력이 달라져야 다른 행동을 낼 이유가 생긴다.
 const emptyTurnNudge = "【空转提醒】你上一轮只输出了思考过程，既没有给出正文回复，也没有调用任何工具，" +
 	"这一轮等于没有产出。请直接执行你刚才想好的下一步：要么调用工具，要么给出结论文字。不要重复思考。"
 
@@ -614,10 +614,10 @@ func (h steerHooks) PostToolUse(ctx context.Context, name string, input, result 
 	}
 }
 
-// Stop 在 guard 原有语义之上补一层「空转回合」续跑:模型只输出了思考、既没给正文
-// 也没调工具时，harness 会把它当成自然结束并以空 summary 收场(query.go 的
-// ReasonCompleted + asst.Text())，一条本来还没做完的意图就这样断在半路。此时注入
-// 一条续跑指令，让模型带着已有思考接着走。
+// Stop 은 guard 의 기존 의미 위에 「공회전 턴」 이어가기 계층을 덧붙인다. 모델이 생각만 출력하고 본문을 주지 않아
+// 도구도 호출하지 않았을 때 harness 는 이를 자연 종료로 보고 빈 summary 로 종료한다(query.go 의
+// ReasonCompleted + asst.Text()). 아직 끝나지 않은 의도 하나가 이렇게 중간에 끊긴다. 이때 주입하여
+// 이어가기 지시 하나를 넣어 모델이 이미 가진 생각을 가지고 계속 진행하게 한다.
 func (h steerHooks) Stop(ctx context.Context, messages []llm.Message) (bool, []string, string) {
 	var (
 		prevent  bool
@@ -627,17 +627,17 @@ func (h steerHooks) Stop(ctx context.Context, messages []llm.Message) (bool, []s
 	if h.inner != nil {
 		prevent, blocking, msg = h.inner.Stop(ctx, messages)
 	}
-	// inner 已经决定硬停、或已经要注入自己的续跑消息 → 尊重它，不再叠加。
-	// limit<=0 = 用户把「空响应重试次数」配成了 -1，即显式关掉这层。
+	// inner 가 이미 강제 정지를 결정했거나 자신의 이어가기 메시지를 주입하려 하면 → 이를 존중하고 더 중첩하지 않는다.
+	// limit<=0 = 사용자가 「빈 응답 재시도 횟수」를 -1 로 설정한 것이며, 이 계층을 명시적으로 끈 것이다.
 	if prevent || len(blocking) > 0 || h.nudges == nil || h.limit <= 0 || !isThinkingOnlyTurn(messages) {
 		return prevent, blocking, msg
 	}
 	n := h.nudges.Add(1)
 	if n > int64(h.limit) {
-		log.Printf("[work %s] 空转回合(仅思考、无正文无工具)已达续跑上限 %d，放行收场", h.label, h.limit)
+		log.Printf("[work %s] 공회전 턴(생각만 있고 본문·도구 없음)이 이어가기 상한 %d 에 도달, 종료를 허용", h.label, h.limit)
 		return prevent, blocking, msg
 	}
-	log.Printf("[work %s] 空转回合(仅思考、无正文无工具)，注入续跑指令 (%d/%d)", h.label, n, h.limit)
+	log.Printf("[work %s] 공회전 턴(생각만 있고 본문·도구 없음), 이어가기 지시 주입 (%d/%d)", h.label, n, h.limit)
 	return false, []string{emptyTurnNudge}, ""
 }
 
@@ -676,9 +676,9 @@ func (e *Engine) emitActivity(t *Task, r db.Activity) db.Activity {
 	id, err := e.appendActivity(t, r)
 	if err != nil {
 		// NO LONGER SILENT: dropping a record breaks command↔result pairing in the
-		// trace — a tool_use whose tool_result was lost shows as "执行中" forever, and
-		// a lost 'result'/'round' record leaves the session with no summary ("无总结").
-		// Everything needed to分析根因 goes into ONE error-level line: reason class,
+		// trace — tool_result 가 유실된 tool_use 는 "执行中" 으로 영원히 남고, 그리고
+		// 유실된 'result'/'round' 레코드는 세션에 요약이 없게 만든다 ("无总结").
+		// 근본 원인 분석에 필요한 모든 정보는 error 레벨 한 줄에 담는다: reason 분류,
 		// summary preview, running drop count for this task, and — on the FK case — a
 		// live probe of WHY the parent exploration is unreachable.
 		n := e.bumpDrop(t.ID)
@@ -688,13 +688,13 @@ func (e *Engine) emitActivity(t *Task, r db.Activity) db.Activity {
 		if isFKViolation(err) {
 			storeID := t.Store.ID()
 			if exists, refs, maxID, dErr := e.m.pg.ExplorationDiag(storeID); dErr != nil {
-				diag = fmt.Sprintf(" | FK诊断查询失败(store.expID=%d task.ExpID=%d): %v", storeID, t.ExpID, dErr)
+				diag = fmt.Sprintf(" | FK 진단 조회 실패(store.expID=%d task.ExpID=%d): %v", storeID, t.ExpID, dErr)
 			} else {
-				diag = fmt.Sprintf(" | FK诊断: store.expID=%d task.ExpID=%d exploration存在=%v 引用它的task数=%d MAX(exploration.id)=%d",
+				diag = fmt.Sprintf(" | FK 진단: store.expID=%d task.ExpID=%d exploration 존재=%v 참조하는 task 수=%d MAX(exploration.id)=%d",
 					storeID, t.ExpID, exists, refs, maxID)
 			}
 		}
-		log.Printf("[activity] task %s 丢弃活动记录(该任务累计第 %d 条) worker=%s kind=%s tool=%s tuid=%s reason=%s summary=%q: %v%s",
+		log.Printf("[activity] task %s 활동 기록 폐기(해당 태스크 누적 %d건) worker=%s kind=%s tool=%s tuid=%s reason=%s summary=%q: %v%s",
 			t.ID, n, r.Worker, r.Kind, r.Tool, r.ToolUseID, dropReason(err), preview(r.Summary, 80), err, diag)
 		e.touch(t.ID)
 		return r
@@ -719,12 +719,12 @@ func (e *Engine) appendActivity(t *Task, r db.Activity) (int64, error) {
 	for attempt := 1; attempt <= 3; attempt++ {
 		if id, err = t.Store.AppendActivity(r); err == nil {
 			if attempt > 1 {
-				log.Printf("[activity] task %s 写入第 %d 次重试成功 (worker=%s kind=%s tool=%s)",
+				log.Printf("[activity] task %s %d차 재시도 기록 성공 (worker=%s kind=%s tool=%s)",
 					t.ID, attempt, r.Worker, r.Kind, r.Tool)
 			}
 			return id, nil
 		}
-		log.Printf("[activity] task %s 写入失败 (第 %d/3 次, worker=%s kind=%s tool=%s expID=%d): %v",
+		log.Printf("[activity] task %s 기록 실패 (%d/3차, worker=%s kind=%s tool=%s expID=%d): %v",
 			t.ID, attempt, r.Worker, r.Kind, r.Tool, t.Store.ID(), err)
 		time.Sleep(time.Duration(attempt) * 25 * time.Millisecond)
 	}
@@ -800,28 +800,28 @@ func (e *Engine) Run(ctx context.Context, t *Task) {
 		name := fmt.Sprintf("work#%d", i+1)
 		runTaskRoutine(rt, func(loopCtx context.Context) { e.workerLoop(loopCtx, t, name) })
 	}
-	e.startDeadlineCoordinator(ctx, t) // 任务级超时定时器(仅 timeout>0;去重)
-	// 仅在「完全没有活动意图(open+running)」时才 kick 首轮规划。带种子意图的任务:种子已
-	// 是 open,或已被上面刚起的 worker 抢先 claim 成 running——两种都算「有活干」,一律跳过
-	// 首轮 planner,worker 直接领种子意图开跑,跑完由 NotifyDone/心跳唤醒 planner。
-	// ⚠️ 不能用 Frontier(只数 open):worker 领取(open→running)与本检查存在竞态,会误 kick。
-	// 重启自动恢复时也可能只剩 running 意图,同样应跳过。
+	e.startDeadlineCoordinator(ctx, t) // 태스크 단위 타임아웃 타이머(timeout>0 인 경우에만; 중복 방지)
+	// 「활성 의도(open+running)가 전혀 없을 때」에만 첫 라운드 계획을 kick 한다. 시드 의도가 있는 태스크는: 시드가 이미
+	// open 상태이거나, 위에서 막 시작된 worker 가 먼저 claim 하여 running 이 된 경우다. 두 경우 모두 「할 일이 있음」으로 보아 일괄 건너뛴다
+	// 첫 라운드 planner 는 건너뛰고, worker 가 시드 의도를 바로 수령해 실행하며, 실행이 끝나면 NotifyDone/하트비트가 planner 를 깨운다.
+	// ⚠️ Frontier(open 만 집계)를 쓰면 안 된다: worker 수령(open→running)과 이 검사 사이에 경쟁 상태가 있어 잘못 kick 할 수 있다.
+	// 재시작 자동 복구 시에도 running 의도만 남을 수 있으므로 마찬가지로 건너뛰어야 한다.
 	if has, _ := t.Store.HasActiveIntent(); !has {
 		t.Notify() // kick the first planning round (acted on once LLM is ready)
 	}
 }
 
-// plannerHeartbeatInterval 解析任务的 planner 心跳间隔。db.CreateTask 已归一
-// (低于 600 一律抬到 600);这里再兜一次底,防内存态异常值。
+// plannerHeartbeatInterval 은 태스크의 planner 하트비트 간격을 해석한다. db.CreateTask 가 이미 정규화하여
+// (600 미만은 모두 600 으로 올림). 여기서 한 번 더 하한을 적용해 메모리 상의 비정상 값을 방지한다.
 func plannerHeartbeatInterval(t *Task) time.Duration {
 	sec := t.PlanHeartbeatSeconds
-	if sec < db.MinPlanHeartbeatSeconds { // 下限=默认=600(10min)
+	if sec < db.MinPlanHeartbeatSeconds { // 하한 = 기본값 = 600(10분)
 		sec = db.MinPlanHeartbeatSeconds
 	}
 	return time.Duration(sec) * time.Second
 }
 
-// resetPlannerTimer 安全重臂一个可能已触发的 Timer(标准 Stop→drain→Reset 模式)。
+// resetPlannerTimer 는 이미 발화했을 수 있는 Timer 를 안전하게 재무장한다(표준 Stop→drain→Reset 패턴).
 func resetPlannerTimer(timer *time.Timer, d time.Duration) {
 	if !timer.Stop() {
 		select {
@@ -834,13 +834,13 @@ func resetPlannerTimer(timer *time.Timer, d time.Duration) {
 
 func (e *Engine) plannerLoop(ctx context.Context, t *Task) {
 	interval := plannerHeartbeatInterval(t)
-	// 心跳定时器在 loop 入口臂 = 从任务 start 计时:即使是跳过首轮 planner 的 seed 任务
-	// (Run 里 frontier 非空不 kick 首轮)、这里一直阻塞,心跳也会在「任务 start + interval」
-	// 触发第一轮规划。之后每次唤醒(边沿/心跳)都重臂 = 距上次任意规划触发的时长。
+	// 하트비트 타이머는 loop 진입 시 무장된다 = 태스크 start 부터 계시. 첫 라운드 planner 를 건너뛰는 seed 태스크라도
+	// (Run 에서 frontier 가 비어 있지 않으면 첫 라운드를 kick 하지 않음) 여기서 계속 블록되더라도 하트비트는 「태스크 start + interval」
+	// 시점에 첫 라운드 계획을 발화한다. 이후 깨어날 때마다(엣지/하트비트) 재무장한다 = 마지막 계획 발화 이후 경과 시간.
 	heartbeat := time.NewTimer(interval)
 	defer heartbeat.Stop()
 
-	// runRound 跑一轮规划(含 debounce 合并 + 各 guard)。src 仅用于日志区分触发来源。
+	// runRound 는 계획 한 라운드를 실행한다(debounce 병합 + 각 guard 포함). src 는 로그에서 트리거 출처를 구분하는 데만 사용한다.
 	runRound := func(src string) {
 		// debounce: coalesce a burst of changes into one planning round
 		timer := time.NewTimer(e.debounce)
@@ -868,41 +868,41 @@ func (e *Engine) plannerLoop(ctx context.Context, t *Task) {
 		if isTerminalStatus(t.lifecycleSnapshot().Status) {
 			return
 		}
-		// 任务级超时收尾中:丢弃普通唤醒——worker 收尾写回、Resume 的 Notify 都不再
-		// 触发常规规划轮;终局那一轮由协调器(settleTask)直接驱动,不走这里。
+		// 태스크 타임아웃 마무리 중: 일반 깨우기를 폐기한다. worker 의 마무리 기록과 Resume 의 Notify 모두
+		// 일반 계획 라운드를 발화하지 않는다. 최종 라운드는 코디네이터(settleTask)가 직접 구동하며 여기를 거치지 않는다.
 		if e.isSettling(t.ID) {
 			return
 		}
-		// goalless（人工直投）分支：任务已无 open 目标时 planner 不跑——跑了会重判
-		// met→cancelExec 杀掉用户经主 agent 直投的意图。是否结束改由 frontier 决定：
-		// 还有 open/running 意图 → 保持 running、静默等待；意图已全部跑干 → 落 done。
-		// 整段纯 Go、不触发任何 LLM 调用，也不打规划轮 marker。
+		// goalless(사람의 직접 투입) 분기: 태스크에 open 목표가 없으면 planner 를 실행하지 않는다. 실행하면 다시 판정하여
+		// met→cancelExec 로 사용자가 메인 agent 를 거쳐 직접 투입한 의도를 죽일 수 있다. 종료 여부는 frontier 가 결정한다:
+		// open/running 의도가 남아 있으면 → running 을 유지하고 조용히 대기. 의도가 모두 소진되면 → done 기록.
+		// 이 구간은 순수 Go 이며 어떤 LLM 호출도 발생시키지 않고, 계획 라운드 marker 도 찍지 않는다.
 		if open, err := t.Store.HasOpenGoal(); err == nil && !open {
-			t.drainTriggers() // 丢弃累积的 done/finding 触发，避免 goalless 长会话里无界增长
+			t.drainTriggers() // 누적된 done/finding 트리거를 폐기하여 goalless 장기 세션에서 무한히 커지지 않도록 한다
 			if active, err := t.Store.HasActiveIntent(); err == nil && !active {
-				// frontier 抽干且无在跑意图 → 收尾。用 Guarded 版做 CAS，避免踩到并发的
-				// pause/delete/超时收尾的状态转换。
+				// frontier 가 비고 실행 중인 의도도 없으면 → 마무리. Guarded 버전으로 CAS 를 수행하여 동시 발생하는
+				// pause/delete/타임아웃 마무리의 상태 전이와 충돌하지 않도록 한다.
 				if won, err := e.m.SetTaskStatusGuarded(t.ID, "done"); err != nil {
-					log.Printf("[goalless] task %s 收尾落 done 失败: %v", t.ID, err)
+					log.Printf("[goalless] task %s 마무리 중 done 기록 실패: %v", t.ID, err)
 				} else if won {
 					e.emitActivity(t, db.Activity{Worker: "system", Kind: "text",
 						Summary: goallessTaskDoneSummary})
 				}
 			}
-			return // goalless 分支永不进入 planner.Plan
+			return // goalless 분기는 planner.Plan 에 절대 진입하지 않는다
 		}
 		if !e.beginTaskOperation(t.ID) {
 			return
 		}
 		defer e.decInflight(t.ID)
-		e.stampFirstRun(t) // 首次真正规划 → 盖 first_run_at + 算 deadline(仅带 timeout 的任务)
+		e.stampFirstRun(t) // 첫 실제 계획 → first_run_at 스탬프 기록 + deadline 계산(timeout 이 있는 태스크만)
 		e.touch(t.ID)
 		emit := func(r db.Activity) { e.emitActivity(t, r) }
-		ectx := e.clockCtx(e.execContextFor(ctx, t.ID), t, false) // cancellable by Pause; 带任务 deadline
+		ectx := e.clockCtx(e.execContextFor(ctx, t.ID), t, false) // cancellable by Pause; 태스크 deadline 포함
 		if ectx.Err() != nil || e.IsDeleting(t.ID) {
 			return
 		}
-		log.Printf("[planner] task %s 规划中…(%s 触发)", t.ID, src)
+		log.Printf("[planner] task %s 계획 중…(%s 트리거)", t.ID, src)
 		// round marker: each Plan() is one planner round; emit a boundary so the
 		// UI can separate rounds in the transcript (kind='round').
 		e.emitActivity(t, db.Activity{Worker: "planner", Kind: "round",
@@ -916,19 +916,19 @@ func (e *Engine) plannerLoop(ctx context.Context, t *Task) {
 		e.EndLLMCall(t.ID)
 		switch {
 		case err != nil && ectx.Err() == nil:
-			log.Printf("[planner] task %s 规划出错: %v", t.ID, err)
+			log.Printf("[planner] task %s 계획 오류: %v", t.ID, err)
 		case met:
-			log.Printf("[planner] task %s 判定目标达成: %s", t.ID, reason)
-			// 所有目标达成 → 持久化任务状态为 done（前端 DTO 会优先展示该终态）。
+			log.Printf("[planner] task %s 목표 달성 판정: %s", t.ID, reason)
+			// 모든 목표 달성 → 태스크 상태를 done 으로 영속화한다(프론트엔드 DTO 가 이 최종 상태를 우선 표시함).
 			if err := e.m.SetTaskStatus(t.ID, "done"); err != nil {
-				log.Printf("[planner] task %s 标记完成落库失败: %v", t.ID, err)
+				log.Printf("[planner] task %s 완료 표시 DB 저장 실패: %v", t.ID, err)
 			}
-			// 任务已判完成 → 立刻取消在跑的 worker：它们手头的意图跑出来也没意义了。
-			// 下一轮 worker 循环撞终态门就不再领新意图;被取消的这批走下方"任务已完成"分支
-			// 归为 stopped(而非 blocked)。
+			// 태스크가 완료로 판정됨 → 실행 중인 worker 를 즉시 취소한다. 지금 맡은 의도의 결과도 더 이상 의미가 없다.
+			// 다음 worker 루프가 최종 상태 게이트에 걸리면 새 의도를 더 이상 수령하지 않는다. 취소된 이 묶음은 아래 "태스크 완료" 분기로 가서
+			// stopped 로 분류된다(blocked 가 아님).
 			e.cancelExec(t.ID, agent.AbortGoalMet)
 		default:
-			log.Printf("[planner] task %s 规划完成", t.ID)
+			log.Printf("[planner] task %s 계획 완료", t.ID)
 		}
 		e.touch(t.ID)
 	}
@@ -938,12 +938,12 @@ func (e *Engine) plannerLoop(ctx context.Context, t *Task) {
 		case <-ctx.Done():
 			return
 		case <-t.notify:
-			runRound("edge") // worker 结束 / finding / kill / resume / seed 首轮
+			runRound("edge") // worker 종료 / finding / kill / resume / seed 첫 라운드
 		case <-heartbeat.C:
-			// 周期兜底:死锁兜底 + 唤醒去监督飞行中的 worker(steer/kill) + 周期复查。
+			// 주기 폴백: 데드락 폴백 + 진행 중인 worker(steer/kill) 감독을 위한 깨우기 + 주기 재점검.
 			runRound("heartbeat")
 		}
-		// 每次唤醒(边沿或心跳)后重臂心跳:任意规划触发都重算这段静置计时。
+		// 깨어날 때마다(엣지 또는 하트비트) 하트비트를 재무장한다. 계획 발화가 있을 때마다 이 유휴 타이머를 다시 계산한다.
 		resetPlannerTimer(heartbeat, interval)
 	}
 }
@@ -975,13 +975,13 @@ func (e *Engine) workerLoop(ctx context.Context, t *Task, name string) {
 			if sleepCtx(ctx, 1000*time.Millisecond) {
 				return
 			}
-			continue // 任务超时收尾中:不再领新意图(在跑的自行收尾,协调器等其 drain)
+			continue // 태스크 타임아웃 마무리 중: 새 의도를 더 이상 수령하지 않는다(실행 중인 것은 스스로 마무리하며, 코디네이터가 그 drain 을 기다린다)
 		}
 		if isTerminalStatus(e.m.TaskStatus(t.ID)) {
 			if sleepCtx(ctx, 1000*time.Millisecond) {
 				return
 			}
-			continue // 任务已终态(done/failed/timeout):停止领取遗留意图,别在完成后空跑 frontier
+			continue // 태스크가 최종 상태(done/failed/timeout)임. 남은 의도 수령을 중단하며, 완료 후 frontier 를 공회전시키지 않는다
 		}
 		if !e.beginTaskOperation(t.ID) {
 			return
@@ -1002,7 +1002,7 @@ func (e *Engine) runWorkerStep(ctx context.Context, t *Task, name string, worker
 	if intent == nil {
 		return false
 	}
-	log.Printf("[worker %s] task %s 领取意图 #%d", name, t.ID, intent.ID)
+	log.Printf("[worker %s] task %s 의도 #%d 수령", name, t.ID, intent.ID)
 	return e.runIntent(ctx, t, name, worker, intent, "", "")
 }
 
@@ -1016,13 +1016,13 @@ func (e *Engine) runWorkerStep(ctx context.Context, t *Task, name string, worker
 // cannot observe quiescence between the LLM return and the final DB writes.
 func (e *Engine) runIntent(ctx context.Context, t *Task, name string, worker *agent.Worker, intent *db.Node, requestID, message string) bool {
 	hasChatMessage := message != ""
-	e.stampFirstRun(t) // 首次真正执行 → 盖 first_run_at + 算 deadline(仅带 timeout 的任务)
+	e.stampFirstRun(t) // 첫 실제 실행 → first_run_at 스탬프 기록 + deadline 계산(timeout 이 있는 태스크만)
 	e.touch(t.ID)
 	emit := func(r db.Activity) { e.emitActivity(t, r) }
-	ectx := e.clockCtx(e.execContextFor(ctx, t.ID), t, false) // cancellable by Pause; 带任务 deadline
+	ectx := e.clockCtx(e.execContextFor(ctx, t.ID), t, false) // cancellable by Pause; 태스크 deadline 포함
 	if ectx.Err() != nil || e.IsDeleting(t.ID) {
 		if err := transitionIntentState(t.Store, intent.ID, "running", "open"); err != nil {
-			log.Printf("[worker %s] task %s 意图 #%d 领取后回退失败: %v", name, t.ID, intent.ID, err)
+			log.Printf("[worker %s] task %s 의도 #%d 수령 후 롤백 실패: %v", name, t.ID, intent.ID, err)
 		}
 		return true
 	}
@@ -1039,8 +1039,8 @@ func (e *Engine) runIntent(ctx context.Context, t *Task, name string, worker *ag
 	}
 	label := fmt.Sprintf("%s · #%d", name, iid)
 	workCtx = intercept.WithTaskContext(workCtx, t.ID, label, taskEmit)
-	// nudges 有意建在 model_error 重跑循环之外:空转续跑的上限是「这条意图」的总量，
-	// 重跑一轮不该把额度清零重来。
+	// nudges 는 의도적으로 model_error 재실행 루프 바깥에 둔다. 공회전 이어가기의 상한은 「이 의도」의 총량이며,
+	// 재실행 한 번으로 할당량을 0 으로 되돌려서는 안 된다.
 	hooks := steerHooks{
 		inner:  t.Guard.Hooks(),
 		drain:  func() (string, bool) { return e.drainSteer(iid) },
@@ -1059,17 +1059,17 @@ func (e *Engine) runIntent(ctx context.Context, t *Task, name string, worker *ag
 		reason, wrote, err = worker.Execute(workCtx, name, wTaskID, e.m.assets, t.Store, intent, hooks, emit, e.m.enrich, t.NotifyFinding)
 	}
 	e.EndLLMCall(t.ID)
-	// model_error 收场 → 额外重跑几次（退避后再试）。仅在意图仍属本 work、任务
-	// 未暂停/未终止/未取消【且未进入收尾】时重试；否则让位给对应分支处理(收尾期不
-	// 再重试,避免退避挤占其他 worker 的优雅收尾窗口)。
+	// model_error 로 종료 → 추가로 몇 차례 재실행(백오프 후 재시도). 의도가 여전히 이 work 에 속하고 태스크가
+	// 일시정지/종료/취소되지 않았으며【또한 마무리 단계에 들어가지 않은】 경우에만 재시도한다. 그렇지 않으면 해당 분기 처리에 양보한다(마무리 기간에는
+	// 재시도하지 않아, 백오프가 다른 worker 의 우아한 마무리 기간을 잠식하지 않도록 한다).
 	maxRetries, retryBackoff := e.modelErrorRetryPolicy()
 	for attempt := 1; attempt <= maxRetries &&
 		retryableWorkerModelError(reason, err) &&
 		workCtx.Err() == nil && ectx.Err() == nil && !e.IsPaused(t.ID) && !e.isSettling(t.ID); attempt++ {
-		log.Printf("[worker %s] task %s 意图 #%d model_error 收场，%v 后重试 (%d/%d)",
+		log.Printf("[worker %s] task %s 의도 #%d model_error 로 종료, %v 후 재시도 (%d/%d)",
 			name, t.ID, intent.ID, retryBackoff, attempt, maxRetries)
 		if sleepCtx(workCtx, retryBackoff) {
-			break // 退避期间被取消（终止/暂停）→ 交给下方分支处理
+			break // 백오프 기간 중 취소됨(종료/일시정지) → 아래 분기 처리에 맡김
 		}
 		e.BeginLLMCall(t.ID)
 		if hasChatMessage {
@@ -1103,10 +1103,10 @@ func (e *Engine) runIntent(ctx context.Context, t *Task, name string, worker *ag
 	if action == "pause" {
 		controlErr = transitionIntentState(t.Store, intent.ID, "running", "paused")
 		if controlErr != nil {
-			log.Printf("[worker %s] task %s 意图 #%d 暂停状态落库失败: %v", name, t.ID, intent.ID, controlErr)
+			log.Printf("[worker %s] task %s 의도 #%d 일시정지 상태 DB 저장 실패: %v", name, t.ID, intent.ID, controlErr)
 			return true
 		}
-		log.Printf("[worker %s] task %s 意图 #%d 已暂停", name, t.ID, intent.ID)
+		log.Printf("[worker %s] task %s 의도 #%d 일시정지됨", name, t.ID, intent.ID)
 		e.touch(t.ID)
 		return true
 	}
@@ -1116,10 +1116,10 @@ func (e *Engine) runIntent(ctx context.Context, t *Task, name string, worker *ag
 		// a later cancel can finish cleanup instead of leaving a phantom running row.
 		controlErr = transitionIntentState(t.Store, intent.ID, "running", "paused")
 		if controlErr != nil {
-			log.Printf("[worker %s] task %s 意图 #%d 取消栅栏落库失败: %v", name, t.ID, intent.ID, controlErr)
+			log.Printf("[worker %s] task %s 의도 #%d 취소 장벽 DB 저장 실패: %v", name, t.ID, intent.ID, controlErr)
 			return true
 		}
-		log.Printf("[worker %s] task %s 意图 #%d 已停止，等待取消清理", name, t.ID, intent.ID)
+		log.Printf("[worker %s] task %s 의도 #%d 중단됨, 취소 정리 대기 중", name, t.ID, intent.ID)
 		e.touch(t.ID)
 		return true
 	}
@@ -1128,36 +1128,36 @@ func (e *Engine) runIntent(ctx context.Context, t *Task, name string, worker *ag
 	// conversation from its transcript instead of restarting from scratch.
 	if ectx.Err() != nil && taskExecutionPaused(context.Cause(ectx)) {
 		if err := transitionIntentState(t.Store, intent.ID, "running", "open"); err != nil {
-			log.Printf("[worker %s] task %s 意图 #%d 任务暂停回退失败: %v", name, t.ID, intent.ID, err)
+			log.Printf("[worker %s] task %s 의도 #%d 태스크 일시정지 롤백 실패: %v", name, t.ID, intent.ID, err)
 		}
 		return true
 	}
-	// 任务超时收尾的硬兜底 cancel(非 pause、非 kill)取消了本 run → 归为 exhausted(已收尾),
-	// 不要误标 blocked。此时 worker 通常已在 settlement 阶段把结果写回。
+	// 태스크 타임아웃 마무리의 강제 폴백 cancel(pause 도 kill 도 아님)이 이 run 을 취소함 → exhausted(마무리 완료)로 분류하며,
+	// blocked 로 잘못 표시하지 않는다. 이때 worker 는 보통 settlement 단계에서 이미 결과를 기록해 두었다.
 	if ectx.Err() != nil && e.isSettling(t.ID) {
 		if err := transitionIntentState(t.Store, intent.ID, "running", "exhausted"); err != nil {
-			log.Printf("[worker %s] task %s 意图 #%d 超时收尾状态落库失败: %v", name, t.ID, intent.ID, err)
+			log.Printf("[worker %s] task %s 의도 #%d 타임아웃 마무리 상태 DB 저장 실패: %v", name, t.ID, intent.ID, err)
 		}
-		log.Printf("[worker %s] task %s 意图 #%d 因任务超时收尾结束(exhausted)，写回 %s", name, t.ID, intent.ID, wrote)
+		log.Printf("[worker %s] task %s 의도 #%d 태스크 타임아웃 마무리로 종료(exhausted), %s 로 기록", name, t.ID, intent.ID, wrote)
 		e.touch(t.ID)
 		return true
 	}
-	// 任务已判完成(done via 常规路径)→ 上面 cancelExec 取消了本 run。意图结果已无意义,
-	// 标 stopped(不是 blocked),别污染已完成任务的意图状态。
+	// 태스크가 완료로 판정됨(일반 경로의 done) → 위의 cancelExec 가 이 run 을 취소했다. 의도 결과는 이제 의미가 없으므로,
+	// stopped 로 표시한다(blocked 가 아님). 완료된 태스크의 의도 상태를 오염시키지 않도록 한다.
 	if ectx.Err() != nil && isTerminalStatus(e.m.TaskStatus(t.ID)) {
 		if err := transitionIntentState(t.Store, intent.ID, "running", "stopped"); err != nil {
-			log.Printf("[worker %s] task %s 意图 #%d 终态停止落库失败: %v", name, t.ID, intent.ID, err)
+			log.Printf("[worker %s] task %s 의도 #%d 최종 중단 상태 DB 저장 실패: %v", name, t.ID, intent.ID, err)
 		}
-		log.Printf("[worker %s] task %s 意图 #%d 因任务已完成而取消(stopped)", name, t.ID, intent.ID)
+		log.Printf("[worker %s] task %s 의도 #%d 태스크가 이미 완료되어 취소됨(stopped)", name, t.ID, intent.ID)
 		e.touch(t.ID)
 		return true
 	}
 	// killed by the planner: mark stopped (don't write back results, don't auto-reclaim).
 	if killed {
 		if err := transitionIntentState(t.Store, intent.ID, "running", "stopped"); err != nil {
-			log.Printf("[worker %s] task %s 意图 #%d planner 停止落库失败: %v", name, t.ID, intent.ID, err)
+			log.Printf("[worker %s] task %s 의도 #%d planner 중단 DB 저장 실패: %v", name, t.ID, intent.ID, err)
 		}
-		log.Printf("[worker %s] task %s 意图 #%d 被终止(stopped)", name, t.ID, intent.ID)
+		log.Printf("[worker %s] task %s 의도 #%d 종료됨(stopped)", name, t.ID, intent.ID)
 		e.touch(t.ID)
 		t.Notify()
 		return true
@@ -1165,27 +1165,27 @@ func (e *Engine) runIntent(ctx context.Context, t *Task, name string, worker *ag
 	if err != nil {
 		log.Printf("[worker %s] intent %d: %v", name, intent.ID, err)
 	}
-	// terminal分流：撞步数上限 ≠ 完成。max_turns→exhausted（规划者据此知道这个方向
-	// 试过但没真正做完、需换角度，而非当成已覆盖永久跳过）；出错→blocked；正常→done。
+	// terminal 분기: 스텝 수 상한에 부딪힘 ≠ 완료. max_turns→exhausted (계획자는 이로써 이 방향을
+	// 시도했지만 실제로 끝내지 못했고 관점을 바꿔야 함을 안다. 이미 다룬 것으로 보고 영구 건너뛰지 않는다); 오류→blocked; 정상→done.
 	state := "done"
 	switch {
 	case err != nil:
 		state = "blocked"
 	case reason == harness.ReasonMaxTurns:
 		state = "exhausted"
-		log.Printf("[worker %s] intent %d 撞步数上限(exhausted)，本次写回 %s", name, intent.ID, wrote)
+		log.Printf("[worker %s] intent %d 스텝 수 상한 도달(exhausted), 이번에 %s 로 기록", name, intent.ID, wrote)
 	case reason == harness.ReasonTimeout:
 		state = "exhausted"
-		log.Printf("[worker %s] intent %d 运行超时(exhausted)，收尾后写回 %s", name, intent.ID, wrote)
+		log.Printf("[worker %s] intent %d 실행 타임아웃(exhausted), 마무리 후 %s 로 기록", name, intent.ID, wrote)
 	}
 	if state == "blocked" && isTaskLLMChainExhausted(err) {
 		_ = t.Store.SetIntentBlockedReason(intent.ID, db.IntentBlockedLLMQuota)
 	} else {
 		if stateErr := transitionIntentState(t.Store, intent.ID, "running", state); stateErr != nil {
-			log.Printf("[worker %s] task %s 意图 #%d 终态 %s 落库失败: %v", name, t.ID, intent.ID, state, stateErr)
+			log.Printf("[worker %s] task %s 의도 #%d 최종 상태 %s DB 저장 실패: %v", name, t.ID, intent.ID, state, stateErr)
 		}
 	}
-	log.Printf("[worker %s] task %s 意图 #%d 结束: %s (写回 %s)", name, t.ID, intent.ID, state, wrote)
+	log.Printf("[worker %s] task %s 의도 #%d 종료: %s (기록 %s)", name, t.ID, intent.ID, state, wrote)
 	e.touch(t.ID)
 	t.NotifyDone(intent.ID) // results changed the graph -> wake the planner (with the just-finished intent id)
 	return true

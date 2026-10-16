@@ -18,10 +18,11 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { useAgentLabels, useAgentNameByKey } from "@/lib/agent-i18n";
 import { api } from "@/lib/api";
 import type { Agent, Tool } from "@/lib/types";
 
-// Traffic tools are host tools gated by the global 流量捕获 switch: bindable, but
+// Traffic tools are host tools gated by the global 트래픽 캡처 switch: bindable, but
 // only usable when capture is on. Keep in sync with traffic.SeedToolMetas.
 const TRAFFIC_TOOL_KEYS = new Set(["traffic_search", "traffic_get"]);
 
@@ -141,7 +142,8 @@ function ToolEditor({
   onClose: () => void;
 }) {
   const t = useTranslations("toolsPage");
-  // traffic tools can't be bound/enabled until the global 流量捕获 switch is on.
+  const labels = useAgentLabels();
+  // traffic tools can't be bound/enabled until the global 트래픽 캡처 switch is on.
   const trafficGated = TRAFFIC_TOOL_KEYS.has(tool.key) && !captureOn;
   const [description, setDescription] = React.useState(tool.description);
   const [bound, setBound] = React.useState<string[]>(tool.agents);
@@ -202,7 +204,7 @@ function ToolEditor({
                     disabled={trafficGated}
                     onCheckedChange={() => toggleAgent(ag.key)}
                   />
-                  {ag.name}
+                  {labels.name(ag)}
                   <span className="text-muted-foreground font-mono text-xs">{ag.key}</span>
                 </label>
               ))}
@@ -293,6 +295,7 @@ function ToolEditor({
 // ToolGridCard is one clickable tile in the catalog grid.
 function ToolGridCard({ tool, onClick }: { tool: Tool; onClick: () => void }) {
   const t = useTranslations("toolsPage");
+  const agentName = useAgentNameByKey();
   return (
     <button
       type="button"
@@ -333,7 +336,7 @@ function ToolGridCard({ tool, onClick }: { tool: Tool; onClick: () => void }) {
         {tool.agents.length === 0 && <span className="text-muted-foreground text-[10px]">{t("noBoundAgents")}</span>}
         {tool.agents.map((a) => (
           <Badge key={a} variant="outline" className="px-1.5 py-0 text-[10px]">
-            {a}
+            {agentName(a)}
           </Badge>
         ))}
       </div>
@@ -511,7 +514,7 @@ export default function ToolsPage() {
   );
 }
 
-// ---- 自定义工具编辑器 ----
+// ---- 사용자 정의 도구 편집기 ----
 
 type ExecState = {
   command: string;
@@ -537,6 +540,7 @@ function CustomToolDialog({
   onSaved: () => void;
 }) {
   const t = useTranslations("toolsPage");
+  const labels = useAgentLabels();
   const isNew = edit === "new";
   const tool = edit && edit !== "new" ? edit : null;
   const [key, setKey] = React.useState("");
@@ -892,7 +896,7 @@ function CustomToolDialog({
               {agents.map((a) => (
                 <label key={a.key} className="flex items-center gap-2 text-sm">
                   <Checkbox checked={bound.includes(a.key)} onCheckedChange={() => toggleAgent(a.key)} />
-                  {a.name}
+                  {labels.name(a)}
                   <span className="text-muted-foreground font-mono text-xs">{a.key}</span>
                 </label>
               ))}

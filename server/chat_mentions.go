@@ -16,7 +16,7 @@ import (
 const maxChatMentions = 10
 
 // User-facing @멘션(인용) error messages surfaced through the HTTP API, localized
-// to Korean (BRIEF 현지화 방침). 用語: 引用→인용(UI mentionTextarea 네임스페이스
+// to Korean (BRIEF 현지화 방침). 용어: 引用→인용(UI mentionTextarea 네임스페이스
 // 정합). 보존 대상은 여기 없다: 와이어 토큰 라벨(chatMentionPattern·
 // chatMentionKinds)과 에이전트 입력 스냅샷 헤더·절단 표시(composeChatMentionMessage
 // 안)는 표시 문구가 아니라 두뇌 입력 형식이라 원문 그대로 둔다.

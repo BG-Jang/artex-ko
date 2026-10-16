@@ -98,7 +98,7 @@ type GoalSpec struct {
 // shares the rate limiter, gets recorded by llmrec, and participates in LLM
 // failover instead of quietly bypassing all three.
 //
-// desc is the task's free-text description (背景：靶标范围/flag 数量/交战说明等).
+// desc 는 태스크의 자유 텍스트 설명 (배경: 타깃 범위/flag 수량/교전 안내 등).
 // It is fed alongside the goal so the decomposer no longer splits blind — the
 // prompt still forbids inventing anything the two texts don't state.
 //
@@ -127,12 +127,10 @@ func DecomposeGoalsWithProvider(ctx context.Context, prov llm.Provider, dataDir,
 	if prov == nil {
 		return nil
 	}
-	// 目标拆解是一次性调用：不挂 transcript store，所以 agentcore 不会往 ctx 上挂
-	// session id（它只在有 writer 时才挂，见 agentcore.Prompt）。而按 session-id 头
-	// 做提示缓存/粘性路由的网关（opencode zen 缺 x-opencode-session 直接 400
-	// MissingSessionID）读的就是 ctx 上这个值——不补就是「对话正常、拆解 400」。
-	// 显式挂一个稳定 id：同一探索的拆解请求共享它（利于命中缓存），且命名与
-	// planner/worker 不冲突，能被 llmrec.parseSession 正确归因。
+	// 목표 분해는 일회성 호출: transcript store 를 붙이지 않으므로 agentcore 가 ctx 에 session id 를 붙이지 않음
+	// (writer 가 있을 때만 붙음, agentcore.Prompt 참고). 그런데 session-id 헤더로 프롬프트 캐시/스티키 라우팅을 하는 게이트웨이
+	// (opencode zen 은 x-opencode-session 이 없으면 MissingSessionID 로 바로 400)는 ctx 의 이 값을 읽음 — 보충하지 않으면 「대화는 정상, 분해 400」이 됨.
+	// 안정적인 id 를 명시적으로 붙임: 같은 탐색의 분해 요청이 이를 공유(캐시 적중에 유리)하고, 이름도 planner/worker 와 충돌하지 않아 llmrec.parseSession 이 올바르게 귀속할 수 있음.
 	if ts != nil {
 		ctx = transcript.WithSessionID(ctx, fmt.Sprintf("exp%d-goals", ts.ID()))
 	}
@@ -147,8 +145,8 @@ func DecomposeGoalsWithProvider(ctx context.Context, prov llm.Provider, dataDir,
 	// message, NOT the {{.EngagementDescription}} var, so a prompt can't inject it twice.
 	withScope := as != nil && taskID > 0
 	sys := goalsSystem(dataDir, withScope)
-	// set_constraints 始终可用(不依赖 asset store):正文已含「先抽操作约束再拆目标」这步
-	// (可在 agent 编辑页改措辞),这里只需接上工具。
+	// set_constraints 는 항상 사용 가능(asset store 에 의존하지 않음): 본문에 이미「먼저 운영 제약을 추출한 뒤 목표를 분해」 단계가 포함되어 있음
+	// (agent 편집 페이지에서 문구를 바꿀 수 있음), 여기서는 도구만 연결하면 됨.
 	tools := []actool.CoreTool{tsx.setGoals(), tsx.setConstraints()}
 	if withScope {
 		tools = append(tools, tsx.addTaskScope())
@@ -171,10 +169,10 @@ func DecomposeGoalsWithProvider(ctx context.Context, prov llm.Provider, dataDir,
 		Tools:                  tools,
 		PermissionMode:         acperm.ModeBypass,
 		DisableBackgroundTasks: true,
-		// 3 步(抽约束 → 登记范围 → 拆目标)各需一次工具调用,给足回合避免收尾前漏调 set_goals。
+		// 3 단계(제약 추출 → 범위 등록 → 목표 분해) 각각 도구 호출 한 번이 필요하므로, 마무리 전에 set_goals 를 빠뜨리지 않도록 턴을 넉넉히 줌.
 		MaxTurns:     8,
-		NonStreaming: nonStreaming, // 该 profile 选非流式时走 Provider.Complete
-		MaxTokens:    maxTokens,    // 0 = 不发上限,由服务端默认值决定
+		NonStreaming: nonStreaming, // 해당 profile 이 비스트리밍을 선택하면 Provider.Complete 사용
+		MaxTokens:    maxTokens,    // 0 = 상한을 보내지 않고 서버 기본값에 따름
 	}, userMsg, captureEmit)
 	// set_goals persisted the goals directly; read them back so the caller sees what
 	// was written (empty slice ⇒ the LLM produced nothing ⇒ caller falls back).

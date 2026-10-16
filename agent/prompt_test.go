@@ -32,7 +32,7 @@ func TestRenderSystemOverrideAndFallback(t *testing.T) {
 	}
 
 	// full plannerSystem path: DB body [A] is honored, then the code-owned tail
-	// [C] (中间产物输出规约) is ALWAYS appended — editing the body can't drop it.
+	// [C] (中间产物输出规约)는 항상 덧붙여진다 — 본문을 수정해도 이 부분은 빠지지 않는다.
 	PromptOverride = func(k string) (string, bool) { return "PLANNER {{.Goal}}", true }
 	got := plannerSystem("拿下X", "/data", "/data")
 	if !strings.HasPrefix(got, "PLANNER 拿下X") {

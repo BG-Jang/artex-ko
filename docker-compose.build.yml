@@ -1,0 +1,15 @@
+# 생산 compose(docker-compose.yml) 와 겹쳐 쓰는 로컬 소스 빌드 오버레이.
+# 기본 compose 는 발행 이미지(ghcr.io/jiwoochris/artex-ko)를 내려받으므로 로컬 소스
+# 변경이 반영되지 않는다. 이 파일을 함께 주면 artex 서비스를 소스에서 직접 빌드한다.
+#
+# 사용법:
+#   docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+#   docker compose -f docker-compose.yml -f docker-compose.build.yml logs -f artex
+#
+# postgres·환경변수·포트·볼륨 등 나머지 설정은 docker-compose.yml 을 그대로 상속한다.
+services:
+  artex:
+    build:
+      context: .
+      dockerfile: Dockerfile.build
+    image: artex-ko:local

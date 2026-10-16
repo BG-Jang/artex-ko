@@ -1,5 +1,5 @@
-// Package db is the PostgreSQL data source for ARTEX (取代旧 graph 单文件 SQLite)。
-// 它打开连接、应用 schema、并 seed 内置 agent 与变量目录。
+// Package db is the PostgreSQL data source for ARTEX (예전 graph 단일 파일 SQLite를 대체함).
+// 연결을 열고, schema를 적용하며, 내장 agent와 변수 카탈로그를 seed한다.
 package db
 
 import (
@@ -177,23 +177,23 @@ func Open(dsn string) (*DB, error) {
 type builtinAgent struct {
 	key, name, role, desc string
 	vars                  []promptVar
-	interactiveShell      bool // 建行时的默认交互式 shell 开关；ON CONFLICT 不覆盖用户后续手动开关
-	runSeconds            *int // 建行时的单次 run 墙钟上限(秒)；nil=用种子默认(1200)，0=不限时
+	interactiveShell      bool // 행 생성 시 기본 대화형 shell 스위치; ON CONFLICT는 사용자가 나중에 수동으로 바꾼 스위치를 덮어쓰지 않는다
+	runSeconds            *int // 행 생성 시 단일 run의 벽시계 상한(초); nil=seed 기본값(1200) 사용, 0=시간 제한 없음
 }
 
 type promptVar struct{ name, desc, example, source string }
 
-// intp 返回 v 的指针，用于给 builtinAgent 可选字段(如 runSeconds)显式取值。
+// intp는 v의 포인터를 반환하며, builtinAgent의 선택 필드(예: runSeconds)에 명시적으로 값을 지정할 때 사용한다.
 func intp(v int) *int { return &v }
 
-// builtinAgents mirrors docs §5(a). 内置工具不入库；这里只 seed agent + 变量目录。
-// 注：planner/worker/mainagent/auto 的交互式 shell 默认由下方 interactive_shell_default_v1
-// 块统一置 true（尊重后续 toggle）；这里的 interactiveShell 只给需要「建行即默认开」的新 agent。
+// builtinAgents는 docs §5(a)를 그대로 옮긴 것이다. 내장 도구는 DB에 저장하지 않으며, 여기서는 agent와 변수 카탈로그만 seed한다.
+// 참고: planner/worker/mainagent/auto의 대화형 shell 기본값은 아래 interactive_shell_default_v1
+// 블록에서 일괄적으로 true로 설정한다(이후 토글은 존중). 여기의 interactiveShell은 「행 생성 시 기본 ON」이 필요한 새 agent에만 준다.
 var builtinAgents = []builtinAgent{
 	{"goals", "目标拆解", "goals", "把渗透任务目标拆解成若干独立、可验证的子目标。", []promptVar{
 		{"EngagementDescription", "任务描述（测试对象/背景）", "测试 example.com 站点", "exploration"},
-		// Now 是全局 runtime 变量(见 server.globalPromptVars),不再在各 agent 目录里
-		// 重复定义,否则 withGlobalVars 追加时会与全局项撞名。
+		// Now는 전역 runtime 변수(server.globalPromptVars 참고)이므로 각 agent 카탈로그에서 더 이상 정의하지 않는다.
+		// 중복 정의하면 withGlobalVars가 추가될 때 전역 항목과 이름이 충돌한다.
 	}, false, nil},
 	{"planner", "规划", "planner", "读取态势、判定目标，只在确有未覆盖的新方向时补充探索意图（每任务一个规划循环）。", []promptVar{
 		{"Goal", "任务总目标", "拿下 example.com 的管理员权限", "exploration"},
@@ -208,9 +208,9 @@ var builtinAgents = []builtinAgent{
 		{"ProxyAddr", "记录代理地址(驱动 if 双文案)", "127.0.0.1:8080", "runtime"},
 		{"WorkerName", "worker 自我标识(可选)", "worker-1", "runtime"},
 	}, false, nil},
-	// Auto:内置「平台操作」agent。不参与渗透编排循环,经对话页驱动,用工具操作平台。
+	// Auto: 내장 「플랫폼 조작」 agent. 침투 오케스트레이션 루프에는 참여하지 않으며, 대화 페이지로 구동되고 도구로 플랫폼을 조작한다.
 	{"auto", "Auto", "assistant", "平台操作助手：用工具管理任务(建/看/暂停/给提示)与资产，并可创建/修改 skill、自定义工具、MCP。", nil, false, nil},
-	// 渗透测试:内置「独立渗透」agent。经对话页驱动,一人从侦察到收尾走完整条渗透链,自己规划自己执行自己验证。默认开启交互式 shell。
+	// 침투 테스트: 내장 「독립 침투」 agent. 대화 페이지로 구동되며, 정찰부터 마무리까지 침투 체인 전체를 혼자 수행하고 스스로 계획·실행·검증한다. 기본으로 대화형 shell이 켜져 있다.
 	{"pentest", "渗透测试", "assistant", "独立渗透 agent：一人从侦察→找攻击面→深入利用→验证→收尾走完整条链，自己规划、自己执行、自己对抗式验证。", nil, true, intp(0)},
 }
 
@@ -239,8 +239,8 @@ ON CONFLICT (agent_id, var_name) DO UPDATE
 	}
 	// Drop catalog entries for variables that were renamed, so the white-list no
 	// longer advertises a name templates can't resolve (EngagementTitle→Description).
-	// 'Now' 从各 agent 目录提升为全局 runtime 变量后,旧库里 goals 仍残留一条 'Now'
-	// 会与全局项撞名(前端变量列表 key 重复);一并清掉。
+	// 'Now'는 각 agent 카탈로그에서 전역 runtime 변수로 승격되었으므로, 기존 DB의 goals에 남아 있는 'Now' 항목은
+	// 전역 항목과 이름이 충돌한다(프론트엔드 변수 목록의 key 중복). 함께 삭제한다.
 	if _, err := d.Exec(`DELETE FROM agent_prompt_vars WHERE var_name IN ('EngagementTitle', 'CoverageGaps', 'Now')`); err != nil {
 		return fmt.Errorf("cleanup renamed vars: %w", err)
 	}
@@ -253,8 +253,8 @@ ON CONFLICT (agent_id, var_name) DO UPDATE
 		}
 		_ = d.SetSetting("interactive_shell_default_v1", "true")
 	}
-	// Seed the built-in browser (Playwright) MCP once — DISABLED by default (用户
-	// 需要时自行启用), no proxy by default. The traffic-capture toggle injects/strips
+	// Seed the built-in browser (Playwright) MCP once — 기본적으로 DISABLED (사용자가
+	// 필요할 때 직접 활성화), 프록시는 기본적으로 없음. The traffic-capture toggle injects/strips
 	// the recording proxy + CA at runtime (server.Manager.syncBrowserMCPProxy).
 	// Insert only if absent so we never clobber user edits (args/env/enabled/
 	// visibility) on restart.
@@ -360,7 +360,7 @@ func (d *DB) seedDefaultInterceptRules() error {
 		priority int
 	}
 	rules := []rule{
-		// ── 系统破坏性命令 (priority 100) ──────────────────────────────────
+		// ── 시스템 파괴적 명령 (priority 100) ──────────────────────────────────
 		{
 			name:     "[内置] 递归强制删除 rm -rf",
 			target:   "tool_input",
@@ -442,7 +442,7 @@ func (d *DB) seedDefaultInterceptRules() error {
 			message:  "禁止清空防火墙规则（iptables -F / nft flush）",
 			priority: 100,
 		},
-		// ── 数据库破坏性操作 (priority 90) ─────────────────────────────────
+		// ── 데이터베이스 파괴적 작업 (priority 90) ─────────────────────────────────
 		{
 			name:     "[内置] SQL DROP DATABASE / TABLE / SCHEMA",
 			target:   "tool_input",
@@ -479,11 +479,11 @@ func (d *DB) seedDefaultInterceptRules() error {
 			message:  "禁止执行 Redis FLUSHALL / FLUSHDB，可能清空全部缓存数据",
 			priority: 90,
 		},
-		// ── HTTP 破坏性请求 (priority 80) ──────────────────────────────────
-		// Agent 发送 DELETE 请求的三种常见方式：
-		//   1. curl -X DELETE / --request DELETE（Bash 工具直接执行或写入脚本）
-		//   2. Python HTTP 客户端 .delete() 方法
-		//   3. JS/通用脚本里的 method: 'DELETE' / method="DELETE"
+		// ── HTTP 파괴적 요청 (priority 80) ──────────────────────────────────
+		// Agent가 DELETE 요청을 보내는 세 가지 일반적인 방식:
+		//   1. curl -X DELETE / --request DELETE (Bash 도구로 직접 실행하거나 스크립트에 기록)
+		//   2. Python HTTP 클라이언트의 .delete() 메서드
+		//   3. JS/범용 스크립트의 method: 'DELETE' / method="DELETE"
 		{
 			name:     "[内置] curl / wget 发送 DELETE 请求",
 			target:   "tool_input",
@@ -537,10 +537,10 @@ ON CONFLICT DO NOTHING`,
 // seedDefaultInterceptRulesV2 migrates the two safety patterns that used to be
 // hard-coded in guard.go (destructive shell + data-exfil pipe) into ordinary
 // intercept rules. Gated by its own flag so it also lands on DBs that already ran
-// v1. Unlike the old guard.go floor, these are plain [内置] rules — the user can
-// disable or delete them. The exfil rule ships DISABLED by default (its
-// curl/wget/nc pipe pattern mis-fires on legitimate CTF/pentest reverse-shell and
-// data-transfer pipes); enable it manually when exfil gating is actually wanted.
+// v1. 예전 guard.go의 하한 규칙과 달리 이것들은 일반 [내장] 규칙이므로 사용자가
+// 비활성화하거나 삭제할 수 있다. 유출(exfil) 규칙은 기본적으로 DISABLED로 배포된다(그
+// curl/wget/nc 파이프 패턴은 정당한 CTF/침투 테스트의 reverse-shell 및 데이터 전송
+// 파이프에서 오탐이 나기 때문이다); 유출 게이팅이 실제로 필요할 때 수동으로 활성화한다.
 func (d *DB) seedDefaultInterceptRulesV2() error {
 	if v, _, _ := d.GetSetting("intercept_default_rules_v2"); v == "done" {
 		return nil
