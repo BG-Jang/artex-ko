@@ -1,0 +1,17 @@
+# 폐쇄망(air-gap) 실행용 오버레이.
+# 기본 compose 는 발행 이미지(ghcr.io/jiwoochris/artex-ko)를 인터넷에서 받으므로
+# 폐쇄망에서는 쓸 수 없다. 이 파일은 인터넷 PC 에서 미리 빌드·저장한 로컬 이미지
+# (artex-ko:local)를 docker load 로 넣어 둔 상태에서, 받아오지 않고 그대로 실행한다.
+#
+# 준비: scripts/export-airgap.(sh|ps1) 로 이미지를 저장해 매체로 옮기고,
+#       폐쇄망에서 scripts/import-airgap.sh 로 load 한다.
+#
+# 실행(폐쇄망):
+#   docker compose -f docker-compose.yml -f docker-compose.airgap.yml up -d
+#
+# postgres·환경변수·포트·볼륨 등 나머지 설정은 docker-compose.yml 을 그대로 상속한다.
+# ARTEX_IMAGE 로 태그를 바꿀 수 있다(기본 artex-ko:local).
+services:
+  artex:
+    image: ${ARTEX_IMAGE:-artex-ko:local}
+    pull_policy: never
